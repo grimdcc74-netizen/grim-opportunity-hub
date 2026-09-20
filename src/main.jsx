@@ -30,6 +30,31 @@ const URGENCY_ORDER = {
   NO_DEADLINE: 5,
 };
 
+const PERSONAL_STATUSES = [
+  ["da_valutare", "Da valutare"],
+  ["monitorata", "Monitorata"],
+  ["in_preparazione", "In preparazione"],
+  ["inviata", "Inviata"],
+  ["follow_up", "Follow-up"],
+  ["colloquio", "Colloquio"],
+  ["risposta_ricevuta", "Risposta ricevuta"],
+  ["archiviata", "Archiviata"],
+  ["scartata", "Scartata"],
+];
+
+const EMPTY_PERSONAL_STATE = {
+  personal_status: "da_valutare",
+  priority: "",
+  notes: "",
+  next_action: "",
+  follow_up_date: "",
+  material_readiness: "",
+};
+
+function personalStatusLabel(value) {
+  return PERSONAL_STATUSES.find(([id]) => id === value)?.[1] || "Da valutare";
+}
+
 function formatDate(value) {
   if (!value) return "Nessuna scadenza";
   const date = new Date(value);
@@ -168,6 +193,8 @@ function App({ session }) {
   const [urgency, setUrgency] = useState("ALL");
   const [location, setLocation] = useState("ALL");
   const [sort, setSort] = useState("priority");
+  const [personalStates, setPersonalStates] = useState({});
+  const [personalError, setPersonalError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -201,6 +228,70 @@ function App({ session }) {
       active = false;
     };
   }, [session.user.id]);
+
+  useEffect(() => {
+    let active = true;
+    setPersonalError("");
+    supabase
+      .from("opportunity_user_state")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .then(({ data, error: stateError }) => {
+        if (!active) return;
+        if (stateError) {
+          setPersonalError(
+            "I dati personali non sono disponibili. Le opportunità pubbliche restano consultabili.",
+          );
+          return;
+        }
+        setPersonalStates(
+          Object.fromEntries(
+            (data || []).map((entry) => [entry.opportunity_id, entry]),
+          ),
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
+  async function savePersonalState(opportunityId, values) {
+    const payload = {
+      user_id: session.user.id,
+      opportunity_id: opportunityId,
+      personal_status: values.personal_status,
+      priority: values.priority ? Number(values.priority) : null,
+      notes: values.notes.trim() || null,
+      next_action: values.next_action.trim() || null,
+      follow_up_date: values.follow_up_date || null,
+      material_readiness: values.material_readiness
+        ? Number(values.material_readiness)
+        : null,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: saveError } = await supabase
+      .from("opportunity_user_state")
+      .upsert(payload, { onConflict: "user_id,opportunity_id" })
+      .select()
+      .single();
+    if (saveError) throw saveError;
+    setPersonalStates((current) => ({ ...current, [opportunityId]: data }));
+    return data;
+  }
+
+  async function deletePersonalState(opportunityId) {
+    const { error: deleteError } = await supabase
+      .from("opportunity_user_state")
+      .delete()
+      .eq("user_id", session.user.id)
+      .eq("opportunity_id", opportunityId);
+    if (deleteError) throw deleteError;
+    setPersonalStates((current) => {
+      const next = { ...current };
+      delete next[opportunityId];
+      return next;
+    });
+  }
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -361,6 +452,12 @@ function App({ session }) {
             <span>{error}</span>
           </div>
         )}
+        {personalError && (
+          <div className="error personal-error" role="alert">
+            <strong>Dati personali non disponibili</strong>
+            <span>{personalError}</span>
+          </div>
+        )}
         {!feed && !error && (
           <div className="loading">
             <i />
@@ -399,7 +496,13 @@ function App({ session }) {
               />
               <div className="opportunity-list">
                 {filtered.slice(0, view === "today" ? 12 : 100).map((item) => (
-                  <OpportunityCard key={item.id} item={item} />
+                  <OpportunityCard
+                    key={item.id}
+                    item={item}
+                    personalState={personalStates[item.id]}
+                    onSave={savePersonalState}
+                    onDelete={deletePersonalState}
+                  />
                 ))}
                 {!filtered.length && (
                   <div className="empty">
@@ -552,7 +655,11 @@ function Filters({
   );
 }
 
-function OpportunityCard({ item }) {
+function OpportunityCard({ item, personalState, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(EMPTY_PERSONAL_STATE);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
   const meta = AREAS[item.area] || {
     label: String(item.area || "ALTRO").toUpperCase(),
     short: "ALTRO",
@@ -563,6 +670,52 @@ function OpportunityCard({ item }) {
     item.applicationUrl ||
     item.canonicalUrl ||
     item.sourceUrl;
+
+  useEffect(() => {
+    setForm({
+      personal_status:
+        personalState?.personal_status || EMPTY_PERSONAL_STATE.personal_status,
+      priority: personalState?.priority ?? "",
+      notes: personalState?.notes || "",
+      next_action: personalState?.next_action || "",
+      follow_up_date: personalState?.follow_up_date || "",
+      material_readiness: personalState?.material_readiness ?? "",
+    });
+  }, [personalState]);
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function handleSave(event) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(item.id, form);
+      setMessage("Salvato");
+    } catch {
+      setMessage("Salvataggio non riuscito. Riprova.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onDelete(item.id);
+      setForm(EMPTY_PERSONAL_STATE);
+      setMessage("Dati personali rimossi");
+    } catch {
+      setMessage("Rimozione non riuscita. Riprova.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <article className="opportunity">
       <div className="rail">
@@ -593,9 +746,38 @@ function OpportunityCard({ item }) {
           <span>{formatDate(item.deadlineEuropeRome || item.deadline)}</span>
           <span>Verifica {formatDate(item.lastVerifiedAt)}</span>
         </div>
+        <div className="personal-summary">
+          <strong className={personalState ? "saved" : "empty-state"}>
+            {personalState
+              ? personalStatusLabel(personalState.personal_status)
+              : "Non ancora gestita"}
+          </strong>
+          {personalState?.priority && (
+            <span>Priorità {personalState.priority}/5</span>
+          )}
+          {personalState?.follow_up_date && (
+            <span>Follow-up {formatDate(personalState.follow_up_date)}</span>
+          )}
+          {personalState?.material_readiness && (
+            <span>Materiali {personalState.material_readiness}/5</span>
+          )}
+        </div>
       </div>
       <div className="action">
         {item.isNew && <span>NEW</span>}
+        <button
+          type="button"
+          className={editing ? "active" : ""}
+          onClick={() => {
+            setEditing((current) => !current);
+            setMessage("");
+          }}
+          aria-expanded={editing}
+          aria-label={`Gestisci ${item.title}`}
+          title="Gestisci"
+        >
+          {editing ? "×" : "+"}
+        </button>
         {destination ? (
           <a
             href={destination}
@@ -609,6 +791,105 @@ function OpportunityCard({ item }) {
           <i>N/V</i>
         )}
       </div>
+      {editing && (
+        <form className="personal-editor" onSubmit={handleSave}>
+          <div className="editor-heading">
+            <div>
+              <p className="eyebrow">GESTIONE PERSONALE</p>
+              <h4>Stato e prossimi passi</h4>
+            </div>
+            <small>Privato, visibile solo nel tuo account</small>
+          </div>
+          <div className="editor-grid">
+            <label>
+              <span>Stato</span>
+              <select
+                name="personal_status"
+                value={form.personal_status}
+                onChange={updateField}
+              >
+                {PERSONAL_STATUSES.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Priorità</span>
+              <select name="priority" value={form.priority} onChange={updateField}>
+                <option value="">Non assegnata</option>
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={value} value={value}>
+                    {value} / 5
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Preparazione materiali</span>
+              <select
+                name="material_readiness"
+                value={form.material_readiness}
+                onChange={updateField}
+              >
+                <option value="">Non valutata</option>
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={value} value={value}>
+                    {value} / 5
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Data follow-up</span>
+              <input
+                type="date"
+                name="follow_up_date"
+                value={form.follow_up_date}
+                onChange={updateField}
+              />
+            </label>
+            <label className="wide">
+              <span>Prossima azione</span>
+              <input
+                name="next_action"
+                value={form.next_action}
+                onChange={updateField}
+                maxLength="500"
+                placeholder="Es. preparare showreel mirato"
+              />
+            </label>
+            <label className="wide">
+              <span>Note</span>
+              <textarea
+                name="notes"
+                value={form.notes}
+                onChange={updateField}
+                maxLength="5000"
+                rows="4"
+                placeholder="Contatti, requisiti, idee e dettagli utili…"
+              />
+            </label>
+          </div>
+          <div className="editor-actions">
+            <button type="submit" disabled={busy}>
+              {busy ? "Salvataggio…" : "Salva dati personali"}
+            </button>
+            {personalState && (
+              <button
+                type="button"
+                className="delete-personal"
+                onClick={handleDelete}
+                disabled={busy}
+              >
+                Rimuovi dati
+              </button>
+            )}
+            {message && <span role="status">{message}</span>}
+          </div>
+        </form>
+      )}
     </article>
   );
 }
