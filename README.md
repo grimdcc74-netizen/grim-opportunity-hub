@@ -6,6 +6,8 @@ Il frontend legge a runtime il feed pubblico da `grim-opportunity-data`. Login e
 
 Per ogni opportunità è possibile salvare stato personale, priorità, prossima azione, data di follow-up, note e livello di preparazione dei materiali. Supabase conserva soltanto l'ID dell'opportunità e questi dati privati: i contenuti pubblici non vengono duplicati.
 
+La sezione Candidature organizza il percorso in una Kanban privata: preparazione, invio, follow-up, colloquio ed esito. La pagina Oggi evidenzia i follow-up scaduti, previsti oggi o entro tre giorni. Gli avvisi sono interni all'app e non richiedono servizi a pagamento.
+
 L'applicazione espone nel browser esclusivamente la publishable key prevista da Supabase. Non usa e non deve mai usare chiavi `service_role` o secret.
 
 ## Sviluppo locale

@@ -19,6 +19,7 @@ const BASE_NAV = [
   { id: "art", label: "Arte", mark: "03" },
   { id: "graffiti", label: "Graffiti / Writing", mark: "04" },
   { id: "photography", label: "Fotografia", mark: "05", future: true },
+  { id: "applications", label: "Candidature", mark: "06" },
 ];
 
 const URGENCY_ORDER = {
@@ -51,8 +52,66 @@ const EMPTY_PERSONAL_STATE = {
   material_readiness: "",
 };
 
+const APPLICATION_STATUSES = [
+  ["in_preparazione", "In preparazione"],
+  ["inviata", "Inviata"],
+  ["follow_up", "Follow-up"],
+  ["colloquio", "Colloquio"],
+  ["risposta_ricevuta", "Risposta ricevuta"],
+  ["accettata", "Accettata"],
+  ["rifiutata", "Rifiutata"],
+  ["archiviata", "Archiviata"],
+];
+
+const APPLICATION_COLUMNS = [
+  { id: "preparazione", label: "Preparazione", statuses: ["in_preparazione"] },
+  { id: "inviata", label: "Inviata", statuses: ["inviata"] },
+  { id: "follow_up", label: "Follow-up", statuses: ["follow_up"] },
+  { id: "colloquio", label: "Colloquio", statuses: ["colloquio"] },
+  {
+    id: "esito",
+    label: "Esito",
+    statuses: ["risposta_ricevuta", "accettata", "rifiutata", "archiviata"],
+  },
+];
+
+const EMPTY_APPLICATION = {
+  status: "in_preparazione",
+  priority: "",
+  notes: "",
+  application_date: "",
+  deadline: "",
+  follow_up_date: "",
+  application_url: "",
+  contact_name: "",
+  contact_email: "",
+};
+
 function personalStatusLabel(value) {
   return PERSONAL_STATUSES.find(([id]) => id === value)?.[1] || "Da valutare";
+}
+
+function applicationStatusLabel(value) {
+  return APPLICATION_STATUSES.find(([id]) => id === value)?.[1] || value;
+}
+
+function dateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function reminderTiming(value) {
+  if (!value) return null;
+  const target = new Date(`${value}T12:00:00`);
+  const today = new Date(`${dateKey()}T12:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const days = Math.round((target - today) / 86400000);
+  if (days < 0) return { days, tone: "overdue", label: "Scaduto" };
+  if (days === 0) return { days, tone: "today", label: "Oggi" };
+  if (days <= 3) return { days, tone: "soon", label: `Tra ${days}g` };
+  return { days, tone: "future", label: `Tra ${days}g` };
 }
 
 function formatDate(value) {
@@ -195,6 +254,8 @@ function App({ session }) {
   const [sort, setSort] = useState("priority");
   const [personalStates, setPersonalStates] = useState({});
   const [personalError, setPersonalError] = useState("");
+  const [applications, setApplications] = useState([]);
+  const [applicationError, setApplicationError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -223,6 +284,29 @@ function App({ session }) {
       .single()
       .then(({ data }) => {
         if (active && data?.display_name) setDisplayName(data.display_name);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    let active = true;
+    setApplicationError("");
+    supabase
+      .from("applications")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("updated_at", { ascending: false })
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) {
+          setApplicationError(
+            "Le candidature non sono disponibili. Riprova dopo aver aggiornato la pagina.",
+          );
+          return;
+        }
+        setApplications(data || []);
       });
     return () => {
       active = false;
@@ -293,6 +377,46 @@ function App({ session }) {
     });
   }
 
+  async function saveApplication(opportunityId, values) {
+    const payload = {
+      user_id: session.user.id,
+      opportunity_id: opportunityId,
+      status: values.status,
+      priority: values.priority ? Number(values.priority) : null,
+      notes: values.notes?.trim() || null,
+      application_date: values.application_date || null,
+      deadline: values.deadline || null,
+      follow_up_date: values.follow_up_date || null,
+      application_url: values.application_url?.trim() || null,
+      contact_name: values.contact_name?.trim() || null,
+      contact_email: values.contact_email?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: saveError } = await supabase
+      .from("applications")
+      .upsert(payload, { onConflict: "user_id,opportunity_id" })
+      .select()
+      .single();
+    if (saveError) throw saveError;
+    setApplications((current) => [
+      data,
+      ...current.filter((entry) => entry.opportunity_id !== opportunityId),
+    ]);
+    return data;
+  }
+
+  async function deleteApplication(opportunityId) {
+    const { error: deleteError } = await supabase
+      .from("applications")
+      .delete()
+      .eq("user_id", session.user.id)
+      .eq("opportunity_id", opportunityId);
+    if (deleteError) throw deleteError;
+    setApplications((current) =>
+      current.filter((entry) => entry.opportunity_id !== opportunityId),
+    );
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut();
   }
@@ -307,6 +431,46 @@ function App({ session }) {
   );
 
   const live = opportunities.filter((item) => item.liveStatus === "LIVE");
+  const opportunityMap = useMemo(
+    () => Object.fromEntries(opportunities.map((item) => [item.id, item])),
+    [opportunities],
+  );
+  const applicationMap = useMemo(
+    () =>
+      Object.fromEntries(
+        applications.map((entry) => [entry.opportunity_id, entry]),
+      ),
+    [applications],
+  );
+  const reminders = useMemo(() => {
+    const byOpportunity = new Map();
+    Object.values(personalStates).forEach((entry) => {
+      if (entry.follow_up_date) {
+        byOpportunity.set(entry.opportunity_id, {
+          opportunityId: entry.opportunity_id,
+          date: entry.follow_up_date,
+          source: "Promemoria personale",
+        });
+      }
+    });
+    applications.forEach((entry) => {
+      if (entry.follow_up_date) {
+        byOpportunity.set(entry.opportunity_id, {
+          opportunityId: entry.opportunity_id,
+          date: entry.follow_up_date,
+          source: "Candidatura",
+        });
+      }
+    });
+    return [...byOpportunity.values()]
+      .map((entry) => ({
+        ...entry,
+        opportunity: opportunityMap[entry.opportunityId],
+        timing: reminderTiming(entry.date),
+      }))
+      .filter((entry) => entry.timing)
+      .sort((a, b) => a.timing.days - b.timing.days);
+  }, [applications, opportunityMap, personalStates]);
   const areaCounts = Object.fromEntries(
     Object.keys(AREAS).map((area) => [
       area,
@@ -385,7 +549,9 @@ function App({ session }) {
   const heading =
     view === "today"
       ? "Oggi"
-      : BASE_NAV.find((item) => item.id === view)?.label;
+      : view === "applications"
+        ? "Candidature"
+        : BASE_NAV.find((item) => item.id === view)?.label;
 
   return (
     <div className="app-shell">
@@ -405,12 +571,12 @@ function App({ session }) {
               <i>{item.mark}</i>
               <b>{item.label}</b>
               {item.disabled && <small>PREVISTA</small>}
+              {item.id === "applications" && <small>{applications.length}</small>}
             </button>
           ))}
         </nav>
         <div className="future-nav">
           <p>PROSSIME FASI</p>
-          <span>Candidature</span>
           <span>Materiali</span>
           <span>Studi monitorati</span>
           <span>Storico</span>
@@ -458,6 +624,12 @@ function App({ session }) {
             <span>{personalError}</span>
           </div>
         )}
+        {applicationError && (
+          <div className="error personal-error" role="alert">
+            <strong>Candidature non disponibili</strong>
+            <span>{applicationError}</span>
+          </div>
+        )}
         {!feed && !error && (
           <div className="loading">
             <i />
@@ -467,10 +639,25 @@ function App({ session }) {
 
         {feed && (
           <>
-            {view === "today" && (
-              <Dashboard counts={counts} opportunities={live} />
-            )}
-            <section className="results">
+            {view === "applications" ? (
+              <ApplicationsBoard
+                applications={applications}
+                opportunityMap={opportunityMap}
+                onSave={saveApplication}
+                onDelete={deleteApplication}
+              />
+            ) : (
+              <>
+                {view === "today" && (
+                  <Dashboard
+                    counts={counts}
+                    opportunities={live}
+                    reminders={reminders}
+                    applicationCount={applications.length}
+                    onOpenApplications={() => setView("applications")}
+                  />
+                )}
+                <section className="results">
               <div className="section-title">
                 <div>
                   <p className="eyebrow">
@@ -500,8 +687,10 @@ function App({ session }) {
                     key={item.id}
                     item={item}
                     personalState={personalStates[item.id]}
+                    application={applicationMap[item.id]}
                     onSave={savePersonalState}
                     onDelete={deletePersonalState}
+                    onSaveApplication={saveApplication}
                   />
                 ))}
                 {!filtered.length && (
@@ -510,7 +699,9 @@ function App({ session }) {
                   </div>
                 )}
               </div>
-            </section>
+                </section>
+              </>
+            )}
           </>
         )}
       </main>
@@ -518,7 +709,13 @@ function App({ session }) {
   );
 }
 
-function Dashboard({ counts, opportunities }) {
+function Dashboard({
+  counts,
+  opportunities,
+  reminders,
+  applicationCount,
+  onOpenApplications,
+}) {
   const deadlines = [...opportunities]
     .filter((item) => item.daysRemaining != null && item.daysRemaining >= 0)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
@@ -574,6 +771,67 @@ function Dashboard({ counts, opportunities }) {
           ))}
         </article>
       </div>
+      <ReminderPanel
+        reminders={reminders}
+        applicationCount={applicationCount}
+        onOpenApplications={onOpenApplications}
+      />
+    </section>
+  );
+}
+
+function ReminderPanel({ reminders, applicationCount, onOpenApplications }) {
+  const actionable = reminders.filter((entry) => entry.timing.days <= 3);
+  const overdue = actionable.filter((entry) => entry.timing.days < 0).length;
+  const today = actionable.filter((entry) => entry.timing.days === 0).length;
+  const soon = actionable.filter((entry) => entry.timing.days > 0).length;
+
+  return (
+    <section className="reminder-panel">
+      <div className="reminder-head">
+        <div>
+          <p className="eyebrow">PROMEMORIA OPERATIVI</p>
+          <h3>Follow-up</h3>
+        </div>
+        <button type="button" onClick={onOpenApplications}>
+          Candidature {applicationCount}
+        </button>
+      </div>
+      <div className="reminder-metrics">
+        <span className={overdue ? "danger" : ""}>
+          <b>{overdue}</b> scaduti
+        </span>
+        <span className={today ? "today" : ""}>
+          <b>{today}</b> oggi
+        </span>
+        <span className={soon ? "soon" : ""}>
+          <b>{soon}</b> entro 3 giorni
+        </span>
+      </div>
+      {actionable.length ? (
+        <div className="reminder-list">
+          {actionable.slice(0, 6).map((entry) => (
+            <article
+              key={entry.opportunityId}
+              className={`reminder-item ${entry.timing.tone}`}
+            >
+              <b>{entry.timing.label}</b>
+              <span>
+                <strong>
+                  {entry.opportunity?.title || entry.opportunityId}
+                </strong>
+                <small>
+                  {entry.opportunity?.org || entry.source} · {formatDate(entry.date)}
+                </small>
+              </span>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="reminder-empty">
+          Nessun follow-up scaduto o previsto nei prossimi 3 giorni.
+        </p>
+      )}
     </section>
   );
 }
@@ -655,7 +913,14 @@ function Filters({
   );
 }
 
-function OpportunityCard({ item, personalState, onSave, onDelete }) {
+function OpportunityCard({
+  item,
+  personalState,
+  application,
+  onSave,
+  onDelete,
+  onSaveApplication,
+}) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(EMPTY_PERSONAL_STATE);
   const [busy, setBusy] = useState(false);
@@ -716,6 +981,31 @@ function OpportunityCard({ item, personalState, onSave, onDelete }) {
     }
   }
 
+  async function handleAddApplication() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSaveApplication(item.id, {
+        ...EMPTY_APPLICATION,
+        priority: form.priority,
+        notes: form.notes,
+        follow_up_date: form.follow_up_date,
+        deadline: item.deadlineEuropeRome || item.deadline || "",
+        application_url:
+          item.directApplyUrl ||
+          item.applicationUrl ||
+          item.canonicalUrl ||
+          item.sourceUrl ||
+          "",
+      });
+      setMessage("Aggiunta alle candidature");
+    } catch {
+      setMessage("Impossibile aggiungere la candidatura. Riprova.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <article className="opportunity">
       <div className="rail">
@@ -760,6 +1050,11 @@ function OpportunityCard({ item, personalState, onSave, onDelete }) {
           )}
           {personalState?.material_readiness && (
             <span>Materiali {personalState.material_readiness}/5</span>
+          )}
+          {application && (
+            <strong className="application-badge">
+              Candidatura: {applicationStatusLabel(application.status)}
+            </strong>
           )}
         </div>
       </div>
@@ -886,6 +1181,287 @@ function OpportunityCard({ item, personalState, onSave, onDelete }) {
                 Rimuovi dati
               </button>
             )}
+            {!application && (
+              <button
+                type="button"
+                className="add-application"
+                onClick={handleAddApplication}
+                disabled={busy}
+              >
+                Aggiungi alle candidature
+              </button>
+            )}
+            {message && <span role="status">{message}</span>}
+          </div>
+        </form>
+      )}
+    </article>
+  );
+}
+
+function ApplicationsBoard({
+  applications,
+  opportunityMap,
+  onSave,
+  onDelete,
+}) {
+  if (!applications.length) {
+    return (
+      <section className="application-empty">
+        <p className="eyebrow">KANBAN PRIVATO</p>
+        <h2>Nessuna candidatura ancora inserita</h2>
+        <p>
+          Apri un’opportunità, premi il pulsante + e scegli “Aggiungi alle
+          candidature”. Comparirà qui nel percorso operativo.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="applications-section">
+      <div className="section-title application-title">
+        <div>
+          <p className="eyebrow">KANBAN PRIVATO</p>
+          <h2>Percorso candidature</h2>
+        </div>
+        <strong>{applications.length} TOTALI</strong>
+      </div>
+      <div className="application-board">
+        {APPLICATION_COLUMNS.map((column) => {
+          const entries = applications.filter((entry) =>
+            column.statuses.includes(entry.status),
+          );
+          return (
+            <section className="application-column" key={column.id}>
+              <header>
+                <h3>{column.label}</h3>
+                <span>{entries.length}</span>
+              </header>
+              <div className="application-stack">
+                {entries.map((entry) => (
+                  <ApplicationCard
+                    key={entry.id}
+                    application={entry}
+                    opportunity={opportunityMap[entry.opportunity_id]}
+                    onSave={onSave}
+                    onDelete={onDelete}
+                  />
+                ))}
+                {!entries.length && <p>Nessuna candidatura</p>}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ApplicationCard({ application, opportunity, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({ ...EMPTY_APPLICATION });
+
+  useEffect(() => {
+    setForm({
+      status: application.status,
+      priority: application.priority ?? "",
+      notes: application.notes || "",
+      application_date: application.application_date || "",
+      deadline: application.deadline || "",
+      follow_up_date: application.follow_up_date || "",
+      application_url: application.application_url || "",
+      contact_name: application.contact_name || "",
+      contact_email: application.contact_email || "",
+    });
+  }, [application]);
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function save(values = form) {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(application.opportunity_id, values);
+      setMessage("Salvato");
+    } catch {
+      setMessage("Salvataggio non riuscito");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleStatus(event) {
+    const status = event.target.value;
+    const next = { ...form, status };
+    setForm(next);
+    await save(next);
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    await save();
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Rimuovere questa candidatura dal Kanban?")) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await onDelete(application.opportunity_id);
+    } catch {
+      setMessage("Rimozione non riuscita");
+      setBusy(false);
+    }
+  }
+
+  const timing = reminderTiming(application.follow_up_date);
+  const destination =
+    application.application_url ||
+    opportunity?.directApplyUrl ||
+    opportunity?.applicationUrl ||
+    opportunity?.sourceUrl;
+
+  return (
+    <article className="application-card">
+      <div className="application-card-head">
+        <span className={`area ${(AREAS[opportunity?.area] || {}).tone || "neutral"}`}>
+          {(AREAS[opportunity?.area] || {}).short || "ALTRO"}
+        </span>
+        {application.priority && <b>P{application.priority}</b>}
+      </div>
+      <h4>{opportunity?.title || application.opportunity_id}</h4>
+      <p>{opportunity?.org || "Opportunità non più presente nel feed"}</p>
+      <label className="quick-status">
+        <span>Stato</span>
+        <select
+          value={form.status}
+          onChange={handleStatus}
+          disabled={busy}
+          aria-label="Sposta candidatura"
+        >
+          {APPLICATION_STATUSES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="application-dates">
+        {application.deadline && (
+          <span>Scadenza {formatDate(application.deadline)}</span>
+        )}
+        {application.follow_up_date && (
+          <span className={timing?.tone || ""}>
+            Follow-up {formatDate(application.follow_up_date)}
+          </span>
+        )}
+      </div>
+      <div className="application-card-actions">
+        <button type="button" onClick={() => setEditing((value) => !value)}>
+          {editing ? "Chiudi" : "Dettagli"}
+        </button>
+        {destination && (
+          <a href={destination} target="_blank" rel="noreferrer">
+            Apri ↗
+          </a>
+        )}
+      </div>
+      {editing && (
+        <form className="application-form" onSubmit={handleSubmit}>
+          <label>
+            <span>Priorità</span>
+            <select name="priority" value={form.priority} onChange={updateField}>
+              <option value="">Non assegnata</option>
+              {[1, 2, 3, 4, 5].map((value) => (
+                <option key={value} value={value}>
+                  {value} / 5
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Data invio</span>
+            <input
+              type="date"
+              name="application_date"
+              value={form.application_date}
+              onChange={updateField}
+            />
+          </label>
+          <label>
+            <span>Scadenza</span>
+            <input
+              type="date"
+              name="deadline"
+              value={form.deadline}
+              onChange={updateField}
+            />
+          </label>
+          <label>
+            <span>Follow-up</span>
+            <input
+              type="date"
+              name="follow_up_date"
+              value={form.follow_up_date}
+              onChange={updateField}
+            />
+          </label>
+          <label>
+            <span>Referente</span>
+            <input
+              name="contact_name"
+              value={form.contact_name}
+              onChange={updateField}
+              maxLength="200"
+            />
+          </label>
+          <label>
+            <span>Email</span>
+            <input
+              type="email"
+              name="contact_email"
+              value={form.contact_email}
+              onChange={updateField}
+              maxLength="320"
+            />
+          </label>
+          <label className="wide">
+            <span>URL candidatura</span>
+            <input
+              type="url"
+              name="application_url"
+              value={form.application_url}
+              onChange={updateField}
+            />
+          </label>
+          <label className="wide">
+            <span>Note</span>
+            <textarea
+              name="notes"
+              value={form.notes}
+              onChange={updateField}
+              rows="4"
+              maxLength="5000"
+            />
+          </label>
+          <div className="application-form-actions wide">
+            <button type="submit" disabled={busy}>
+              {busy ? "Salvataggio…" : "Salva candidatura"}
+            </button>
+            <button
+              type="button"
+              className="delete-application"
+              onClick={handleDelete}
+              disabled={busy}
+            >
+              Rimuovi
+            </button>
             {message && <span role="status">{message}</span>}
           </div>
         </form>
