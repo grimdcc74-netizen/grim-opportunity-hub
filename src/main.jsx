@@ -22,6 +22,7 @@ const BASE_NAV = [
   { id: "applications", label: "Candidature", mark: "06" },
   { id: "materials", label: "Materiali", mark: "07" },
   { id: "studios", label: "Studi monitorati", mark: "08" },
+  { id: "history", label: "Storico", mark: "09" },
 ];
 
 const URGENCY_ORDER = {
@@ -126,6 +127,27 @@ const EMPTY_STUDIO = {
   is_active: true,
 };
 
+const HISTORY_EVENT_LABELS = {
+  application_created: "Candidatura aggiunta",
+  application_status_changed: "Stato candidatura cambiato",
+  application_deleted: "Candidatura eliminata",
+  material_created: "Materiale aggiunto",
+  material_updated: "Materiale modificato",
+  material_deleted: "Materiale eliminato",
+  studio_created: "Studio aggiunto",
+  studio_checked: "Studio controllato",
+  studio_archived: "Studio archiviato",
+  studio_reactivated: "Studio riattivato",
+  studio_updated: "Studio modificato",
+  studio_deleted: "Studio eliminato",
+};
+
+const HISTORY_ENTITY_LABELS = {
+  application: "CANDIDATURA",
+  material: "MATERIALE",
+  studio: "STUDIO",
+};
+
 const MATERIAL_MAX_BYTES = 25 * 1024 * 1024;
 
 function safeFileName(value) {
@@ -171,6 +193,18 @@ function formatDate(value) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+  }).format(date);
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(date);
 }
 
@@ -309,6 +343,9 @@ function App({ session }) {
   const [materialError, setMaterialError] = useState("");
   const [studios, setStudios] = useState([]);
   const [studioError, setStudioError] = useState("");
+  const [history, setHistory] = useState([]);
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -342,6 +379,33 @@ function App({ session }) {
       active = false;
     };
   }, [session.user.id]);
+
+  useEffect(() => {
+    if (view !== "history") return undefined;
+    let active = true;
+    setHistoryError("");
+    setHistoryLoading(true);
+    supabase
+      .from("activity_history")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("occurred_at", { ascending: false })
+      .limit(500)
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) {
+          setHistoryError(
+            "Lo storico non è disponibile. Riprova dopo aver aggiornato la pagina.",
+          );
+        } else {
+          setHistory(data || []);
+        }
+        setHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id, view]);
 
   useEffect(() => {
     let active = true;
@@ -845,6 +909,8 @@ function App({ session }) {
           ? "Materiali"
         : view === "studios"
           ? "Studi monitorati"
+        : view === "history"
+          ? "Storico"
         : BASE_NAV.find((item) => item.id === view)?.label;
 
   return (
@@ -873,7 +939,6 @@ function App({ session }) {
         </nav>
         <div className="future-nav">
           <p>PROSSIME FASI</p>
-          <span>Storico</span>
           <span>Impostazioni</span>
         </div>
         <div className="account">
@@ -936,6 +1001,12 @@ function App({ session }) {
             <span>{studioError}</span>
           </div>
         )}
+        {historyError && (
+          <div className="error personal-error" role="alert">
+            <strong>Storico non disponibile</strong>
+            <span>{historyError}</span>
+          </div>
+        )}
         {!feed && !error && (
           <div className="loading">
             <i />
@@ -945,7 +1016,13 @@ function App({ session }) {
 
         {feed && (
           <>
-            {view === "studios" ? (
+            {view === "history" ? (
+              <HistoryView
+                entries={history}
+                loading={historyLoading}
+                opportunityMap={opportunityMap}
+              />
+            ) : view === "studios" ? (
               <StudiosVault
                 studios={studios}
                 onCreate={createStudio}
@@ -1551,6 +1628,147 @@ function OpportunityCard({
         </form>
       )}
     </article>
+  );
+}
+
+function HistoryView({ entries, loading, opportunityMap }) {
+  const [entity, setEntity] = useState("all");
+  const [period, setPeriod] = useState("all");
+  const [query, setQuery] = useState("");
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const periodDays = period === "all" ? null : Number(period);
+    const cutoff = periodDays
+      ? Date.now() - periodDays * 24 * 60 * 60 * 1000
+      : null;
+
+    return entries.filter((entry) => {
+      if (entity !== "all" && entry.entity_type !== entity) return false;
+      if (cutoff && new Date(entry.occurred_at).getTime() < cutoff) return false;
+      const subject =
+        entry.entity_type === "application"
+          ? opportunityMap[entry.entity_id]?.title || entry.subject_label
+          : entry.subject_label;
+      return (
+        !needle ||
+        [subject, HISTORY_EVENT_LABELS[entry.event_type], entry.entity_type].some(
+          (value) => String(value || "").toLowerCase().includes(needle),
+        )
+      );
+    });
+  }, [entries, entity, period, query, opportunityMap]);
+
+  const grouped = visible.reduce((groups, entry) => {
+    const key = dateKey(new Date(entry.occurred_at));
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(entry);
+    return groups;
+  }, {});
+
+  function dayLabel(key) {
+    const today = dateKey();
+    const yesterday = dateKey(new Date(Date.now() - 86400000));
+    if (key === today) return "Oggi";
+    if (key === yesterday) return "Ieri";
+    return formatDate(`${key}T12:00:00`);
+  }
+
+  function detail(entry) {
+    if (entry.event_type === "application_status_changed") {
+      return `${applicationStatusLabel(entry.metadata?.from_status)} → ${applicationStatusLabel(entry.metadata?.to_status)}`;
+    }
+    if (entry.event_type.startsWith("material_") && entry.metadata?.material_type) {
+      return entry.metadata.material_type;
+    }
+    if (entry.entity_type === "studio" && entry.metadata?.location) {
+      return entry.metadata.location;
+    }
+    return "";
+  }
+
+  if (loading) {
+    return (
+      <div className="history-loading">
+        <i />
+        <span>Caricamento dello storico…</span>
+      </div>
+    );
+  }
+
+  return (
+    <section className="history-section">
+      <div className="section-title history-title">
+        <div>
+          <p className="eyebrow">CRONOLOGIA PRIVATA</p>
+          <h2>Attività registrate</h2>
+        </div>
+        <strong>{visible.length} EVENTI</strong>
+      </div>
+
+      <div className="history-toolbar">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Cerca nello storico…"
+          aria-label="Cerca nello storico"
+        />
+        <select value={entity} onChange={(event) => setEntity(event.target.value)}>
+          <option value="all">Tutte le attività</option>
+          <option value="application">Candidature</option>
+          <option value="material">Materiali</option>
+          <option value="studio">Studi</option>
+        </select>
+        <select value={period} onChange={(event) => setPeriod(event.target.value)}>
+          <option value="all">Tutto il periodo</option>
+          <option value="7">Ultimi 7 giorni</option>
+          <option value="30">Ultimi 30 giorni</option>
+          <option value="90">Ultimi 90 giorni</option>
+        </select>
+      </div>
+
+      {!visible.length ? (
+        <div className="history-empty">
+          <strong>Nessuna attività registrata</strong>
+          <span>
+            Da ora compariranno qui le modifiche importanti a candidature,
+            materiali e studi monitorati.
+          </span>
+        </div>
+      ) : (
+        <div className="history-groups">
+          {Object.entries(grouped).map(([key, dayEntries]) => (
+            <section className="history-day" key={key}>
+              <header>
+                <h3>{dayLabel(key)}</h3>
+                <span>{dayEntries.length}</span>
+              </header>
+              <div className="history-list">
+                {dayEntries.map((entry) => {
+                  const subject =
+                    entry.entity_type === "application"
+                      ? opportunityMap[entry.entity_id]?.title ||
+                        "Opportunità non più presente nel feed"
+                      : entry.subject_label;
+                  return (
+                    <article className={`history-entry ${entry.entity_type}`} key={entry.id}>
+                      <i />
+                      <div className="history-entry-main">
+                        <span>{HISTORY_ENTITY_LABELS[entry.entity_type]}</span>
+                        <h4>{HISTORY_EVENT_LABELS[entry.event_type] || entry.event_type}</h4>
+                        <strong>{subject}</strong>
+                        {detail(entry) && <small>{detail(entry)}</small>}
+                      </div>
+                      <time dateTime={entry.occurred_at}>{formatDateTime(entry.occurred_at)}</time>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
