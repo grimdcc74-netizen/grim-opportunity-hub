@@ -1976,6 +1976,160 @@ select:focus {
   color: #b8c0c7;
 }
 
+.settings-section {
+  display: grid;
+  gap: 20px;
+}
+.settings-title {
+  margin-bottom: 0;
+}
+.settings-title > div > p:last-child {
+  margin: 8px 0 0;
+  color: #7d8892;
+  font-size: 0.78rem;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.settings-card {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  background: #101419;
+}
+.settings-preferences {
+  grid-row: span 2;
+}
+.settings-card-head {
+  margin-bottom: 24px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.settings-card-head > span {
+  min-width: 33px;
+  padding: 6px 7px;
+  color: #0a0d0e;
+  background: var(--lime);
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 900;
+}
+.settings-card-head h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.settings-card label {
+  margin-top: 15px;
+  display: grid;
+  gap: 7px;
+}
+.settings-card label > span,
+.account-card dt {
+  color: #7b8791;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.settings-card input,
+.settings-card select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid #303943;
+  outline: 0;
+  color: #edf0f2;
+  background: #0c0f13;
+}
+.settings-card input:focus,
+.settings-card select:focus {
+  border-color: var(--lime);
+}
+.settings-actions {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 13px;
+}
+.settings-actions button {
+  min-height: 44px;
+  padding: 0 17px;
+  border: 0;
+  color: #090b0d;
+  background: var(--lime);
+  font-weight: 900;
+  cursor: pointer;
+}
+.settings-actions button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.settings-actions span {
+  color: #bdc5cc;
+  font-size: 0.75rem;
+}
+.account-card dl {
+  margin: 0;
+  display: grid;
+}
+.account-card dl > div {
+  padding: 12px 0;
+  border-bottom: 1px solid #242b32;
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 15px;
+}
+.account-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #d8dde1;
+  font-size: 0.78rem;
+}
+.settings-note,
+.backup-card > p {
+  color: #87929c;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+.settings-note {
+  margin: 18px 0;
+}
+.settings-signout {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #3b4650;
+  color: #cbd2d8;
+  background: transparent;
+  cursor: pointer;
+}
+.settings-signout:hover {
+  border-color: var(--danger);
+  color: #ff8e88;
+}
+.backup-card {
+  grid-column: 2;
+}
+.backup-counts {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.backup-counts span {
+  padding: 8px 10px;
+  border: 1px solid #2d353d;
+  color: #89949e;
+  font-size: 0.65rem;
+}
+.backup-counts b {
+  margin-right: 4px;
+  color: var(--lime);
+}
+
 .history-section {
   display: grid;
   gap: 18px;
@@ -2113,6 +2267,15 @@ select:focus {
 }
 
 @media (max-width: 900px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-preferences {
+    grid-row: auto;
+  }
+  .backup-card {
+    grid-column: auto;
+  }
   .history-toolbar {
     grid-template-columns: 1fr 1fr;
   }
@@ -2135,6 +2298,13 @@ select:focus {
 }
 
 @media (max-width: 620px) {
+  .settings-card {
+    padding: 18px 15px;
+  }
+  .account-card dl > div {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
   .history-toolbar,
   .history-day {
     grid-template-columns: 1fr;

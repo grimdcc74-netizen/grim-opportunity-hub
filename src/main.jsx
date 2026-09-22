@@ -23,6 +23,7 @@ const BASE_NAV = [
   { id: "materials", label: "Materiali", mark: "07" },
   { id: "studios", label: "Studi monitorati", mark: "08" },
   { id: "history", label: "Storico", mark: "09" },
+  { id: "settings", label: "Impostazioni", mark: "10" },
 ];
 
 const URGENCY_ORDER = {
@@ -147,6 +148,22 @@ const HISTORY_ENTITY_LABELS = {
   material: "MATERIALE",
   studio: "STUDIO",
 };
+
+const DEFAULT_PREFERENCES = {
+  start_view: "today",
+  reminder_window_days: 3,
+};
+
+const START_VIEW_OPTIONS = [
+  ["today", "Oggi"],
+  ["work", "Lavoro / VFX"],
+  ["art", "Arte"],
+  ["graffiti", "Graffiti / Writing"],
+  ["applications", "Candidature"],
+  ["materials", "Materiali"],
+  ["studios", "Studi monitorati"],
+  ["history", "Storico"],
+];
 
 const MATERIAL_MAX_BYTES = 25 * 1024 * 1024;
 
@@ -346,6 +363,8 @@ function App({ session }) {
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
+  const [settingsError, setSettingsError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -381,7 +400,37 @@ function App({ session }) {
   }, [session.user.id]);
 
   useEffect(() => {
-    if (view !== "history") return undefined;
+    let active = true;
+    setSettingsError("");
+    supabase
+      .from("settings")
+      .select("preferences")
+      .eq("user_id", session.user.id)
+      .single()
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) {
+          setSettingsError(
+            "Le preferenze non sono disponibili. Sono stati mantenuti i valori standard.",
+          );
+          return;
+        }
+        const loaded = {
+          ...DEFAULT_PREFERENCES,
+          ...(data?.preferences || {}),
+        };
+        setPreferences(loaded);
+        if (START_VIEW_OPTIONS.some(([value]) => value === loaded.start_view)) {
+          setView(loaded.start_view);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    if (!["history", "settings"].includes(view)) return undefined;
     let active = true;
     setHistoryError("");
     setHistoryLoading(true);
@@ -757,6 +806,92 @@ function App({ session }) {
     setStudios((current) => current.filter((entry) => entry.id !== id));
   }
 
+  async function saveSettings(values) {
+    const nextPreferences = {
+      start_view: values.start_view,
+      reminder_window_days: Number(values.reminder_window_days),
+    };
+    const updatedAt = new Date().toISOString();
+    const [profileResult, settingsResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .upsert(
+          {
+            user_id: session.user.id,
+            display_name: values.display_name.trim(),
+            updated_at: updatedAt,
+          },
+          { onConflict: "user_id" },
+        )
+        .select()
+        .single(),
+      supabase
+        .from("settings")
+        .upsert(
+          {
+            user_id: session.user.id,
+            preferences: nextPreferences,
+            backup_version: 1,
+            updated_at: updatedAt,
+          },
+          { onConflict: "user_id" },
+        )
+        .select()
+        .single(),
+    ]);
+    if (profileResult.error) throw profileResult.error;
+    if (settingsResult.error) throw settingsResult.error;
+    setDisplayName(profileResult.data.display_name || "Grim");
+    setPreferences(nextPreferences);
+    return { profile: profileResult.data, settings: settingsResult.data };
+  }
+
+  async function downloadBackup() {
+    const tableNames = [
+      "profiles",
+      "settings",
+      "opportunity_user_state",
+      "applications",
+      "materials",
+      "monitored_studios",
+      "activity_history",
+    ];
+    const results = await Promise.all(
+      tableNames.map((table) =>
+        supabase
+          .from(table)
+          .select("*")
+          .eq("user_id", session.user.id)
+          .limit(10000),
+      ),
+    );
+    const failed = results.find((result) => result.error);
+    if (failed?.error) throw failed.error;
+    const data = Object.fromEntries(
+      tableNames.map((table, index) => [table, results[index].data || []]),
+    );
+    const backup = {
+      product: "GRIM Opportunity Hub",
+      schema_version: 1,
+      exported_at: new Date().toISOString(),
+      account_email: session.user.email,
+      note: "I file dello Storage non sono inclusi. Il backup contiene i loro riferimenti privati.",
+      data,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `grim-opportunity-hub-backup-${dateKey()}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    return backup;
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut();
   }
@@ -911,6 +1046,8 @@ function App({ session }) {
           ? "Studi monitorati"
         : view === "history"
           ? "Storico"
+        : view === "settings"
+          ? "Impostazioni"
         : BASE_NAV.find((item) => item.id === view)?.label;
 
   return (
@@ -938,8 +1075,8 @@ function App({ session }) {
           ))}
         </nav>
         <div className="future-nav">
-          <p>PROSSIME FASI</p>
-          <span>Impostazioni</span>
+          <p>SVILUPPI FUTURI</p>
+          <span>Feed Fotografia</span>
         </div>
         <div className="account">
           <span>{displayName}</span>
@@ -1007,6 +1144,12 @@ function App({ session }) {
             <span>{historyError}</span>
           </div>
         )}
+        {settingsError && (
+          <div className="error personal-error" role="alert">
+            <strong>Preferenze non disponibili</strong>
+            <span>{settingsError}</span>
+          </div>
+        )}
         {!feed && !error && (
           <div className="loading">
             <i />
@@ -1016,7 +1159,24 @@ function App({ session }) {
 
         {feed && (
           <>
-            {view === "history" ? (
+            {view === "settings" ? (
+              <SettingsView
+                displayName={displayName}
+                email={session.user.email}
+                provider={session.user.app_metadata?.provider || "email"}
+                preferences={preferences}
+                counts={{
+                  personalStates: Object.keys(personalStates).length,
+                  applications: applications.length,
+                  materials: materials.length,
+                  studios: studios.length,
+                  history: history.length,
+                }}
+                onSave={saveSettings}
+                onBackup={downloadBackup}
+                onSignOut={handleSignOut}
+              />
+            ) : view === "history" ? (
               <HistoryView
                 entries={history}
                 loading={historyLoading}
@@ -1057,6 +1217,7 @@ function App({ session }) {
                     onOpenApplications={() => setView("applications")}
                     studioCount={studios.filter((entry) => entry.is_active).length}
                     onOpenStudios={() => setView("studios")}
+                    reminderWindowDays={preferences.reminder_window_days}
                   />
                 )}
                 <section className="results">
@@ -1120,6 +1281,7 @@ function Dashboard({
   onOpenApplications,
   studioCount,
   onOpenStudios,
+  reminderWindowDays,
 }) {
   const deadlines = [...opportunities]
     .filter((item) => item.daysRemaining != null && item.daysRemaining >= 0)
@@ -1183,6 +1345,7 @@ function Dashboard({
         onOpenApplications={onOpenApplications}
         studioCount={studioCount}
         onOpenStudios={onOpenStudios}
+        reminderWindowDays={reminderWindowDays}
       />
     </section>
   );
@@ -1195,6 +1358,7 @@ function ReminderPanel({
   onOpenApplications,
   studioCount,
   onOpenStudios,
+  reminderWindowDays,
 }) {
   const combined = [
     ...reminders.map((entry) => ({
@@ -1210,7 +1374,8 @@ function ReminderPanel({
       subtitle: entry.studio.location || "Controllo studio",
     })),
   ].sort((a, b) => a.timing.days - b.timing.days);
-  const actionable = combined.filter((entry) => entry.timing.days <= 3);
+  const windowDays = Number(reminderWindowDays) || 3;
+  const actionable = combined.filter((entry) => entry.timing.days <= windowDays);
   const overdue = actionable.filter((entry) => entry.timing.days < 0).length;
   const today = actionable.filter((entry) => entry.timing.days === 0).length;
   const soon = actionable.filter((entry) => entry.timing.days > 0).length;
@@ -1239,7 +1404,7 @@ function ReminderPanel({
           <b>{today}</b> oggi
         </span>
         <span className={soon ? "soon" : ""}>
-          <b>{soon}</b> entro 3 giorni
+          <b>{soon}</b> entro {windowDays} giorni
         </span>
       </div>
       {actionable.length ? (
@@ -1628,6 +1793,181 @@ function OpportunityCard({
         </form>
       )}
     </article>
+  );
+}
+
+function SettingsView({
+  displayName,
+  email,
+  provider,
+  preferences,
+  counts,
+  onSave,
+  onBackup,
+  onSignOut,
+}) {
+  const [form, setForm] = useState({
+    display_name: displayName,
+    start_view: preferences.start_view,
+    reminder_window_days: preferences.reminder_window_days,
+  });
+  const [saving, setSaving] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [backupMessage, setBackupMessage] = useState("");
+
+  useEffect(() => {
+    setForm({
+      display_name: displayName,
+      start_view: preferences.start_view,
+      reminder_window_days: preferences.reminder_window_days,
+    });
+  }, [displayName, preferences]);
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function handleSave(event) {
+    event.preventDefault();
+    setSaveMessage("");
+    if (!form.display_name.trim()) {
+      setSaveMessage("Inserisci il nome da mostrare nell’app.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(form);
+      setSaveMessage("Impostazioni salvate.");
+    } catch {
+      setSaveMessage("Salvataggio non riuscito.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleBackup() {
+    setBackupMessage("");
+    setBackingUp(true);
+    try {
+      await onBackup();
+      setBackupMessage("Backup scaricato sul computer.");
+    } catch {
+      setBackupMessage("Download del backup non riuscito.");
+    } finally {
+      setBackingUp(false);
+    }
+  }
+
+  const providerLabel = provider === "google" ? "Google" : "Email e password";
+
+  return (
+    <section className="settings-section">
+      <div className="section-title settings-title">
+        <div>
+          <p className="eyebrow">CONFIGURAZIONE PRIVATA</p>
+          <h2>Profilo e preferenze</h2>
+          <p>Le impostazioni vengono salvate nel tuo account Supabase.</p>
+        </div>
+        <strong>0 EURO</strong>
+      </div>
+
+      <div className="settings-grid">
+        <form className="settings-card settings-preferences" onSubmit={handleSave}>
+          <div className="settings-card-head">
+            <span>01</span>
+            <div>
+              <p className="eyebrow">APP</p>
+              <h3>Preferenze operative</h3>
+            </div>
+          </div>
+          <label>
+            <span>Nome visualizzato</span>
+            <input
+              name="display_name"
+              value={form.display_name}
+              onChange={updateField}
+              maxLength="120"
+              required
+            />
+          </label>
+          <label>
+            <span>Pagina iniziale</span>
+            <select name="start_view" value={form.start_view} onChange={updateField}>
+              {START_VIEW_OPTIONS.map(([value, label]) => (
+                <option value={value} key={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Mostra promemoria in arrivo entro</span>
+            <select
+              name="reminder_window_days"
+              value={form.reminder_window_days}
+              onChange={updateField}
+            >
+              {[3, 7, 14, 30].map((days) => (
+                <option value={days} key={days}>{days} giorni</option>
+              ))}
+            </select>
+          </label>
+          <div className="settings-actions">
+            <button type="submit" disabled={saving}>
+              {saving ? "Salvataggio…" : "Salva impostazioni"}
+            </button>
+            {saveMessage && <span role="status">{saveMessage}</span>}
+          </div>
+        </form>
+
+        <section className="settings-card account-card">
+          <div className="settings-card-head">
+            <span>02</span>
+            <div>
+              <p className="eyebrow">ACCOUNT</p>
+              <h3>Accesso privato</h3>
+            </div>
+          </div>
+          <dl>
+            <div><dt>Email</dt><dd>{email}</dd></div>
+            <div><dt>Metodo di accesso</dt><dd>{providerLabel}</dd></div>
+            <div><dt>Protezione dati</dt><dd>RLS attiva</dd></div>
+            <div><dt>Piano</dt><dd>Supabase Free</dd></div>
+          </dl>
+          <p className="settings-note">
+            Il recupero password verrà collegato quando l’app avrà un indirizzo online stabile.
+          </p>
+          <button type="button" className="settings-signout" onClick={onSignOut}>Esci dall’account</button>
+        </section>
+
+        <section className="settings-card backup-card">
+          <div className="settings-card-head">
+            <span>03</span>
+            <div>
+              <p className="eyebrow">COPIA PERSONALE</p>
+              <h3>Backup dei dati</h3>
+            </div>
+          </div>
+          <p>
+            Scarica un file JSON con profilo, preferenze, candidature, materiali,
+            studi e storico. I file caricati nello Storage non vengono duplicati.
+          </p>
+          <div className="backup-counts">
+            <span><b>{counts.personalStates}</b> opportunità gestite</span>
+            <span><b>{counts.applications}</b> candidature</span>
+            <span><b>{counts.materials}</b> materiali</span>
+            <span><b>{counts.studios}</b> studi</span>
+            <span><b>{counts.history}</b> eventi storici</span>
+          </div>
+          <div className="settings-actions">
+            <button type="button" onClick={handleBackup} disabled={backingUp}>
+              {backingUp ? "Preparazione…" : "Scarica backup JSON"}
+            </button>
+            {backupMessage && <span role="status">{backupMessage}</span>}
+          </div>
+        </section>
+      </div>
+    </section>
   );
 }
 
