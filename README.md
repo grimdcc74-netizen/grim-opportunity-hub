@@ -8,6 +8,8 @@ Per ogni opportunità è possibile salvare stato personale, priorità, prossima 
 
 La sezione Candidature organizza il percorso in una Kanban privata: preparazione, invio, follow-up, colloquio ed esito. La pagina Oggi evidenzia i follow-up scaduti, previsti oggi o entro tre giorni. Gli avvisi sono interni all'app e non richiedono servizi a pagamento.
 
+Il Material Vault conserva file privati o collegamenti esterni, separati per VFX / CGI / AI, ART, Street Art / Graffiti e Fotografia. Uno stesso materiale può appartenere a più aree senza duplicare il file. Il bucket Supabase è privato, applica regole RLS per proprietario e limita ogni caricamento a 25 MB per tutelare il piano gratuito. Per showreel e video più grandi è previsto il collegamento a una risorsa esterna.
+
 L'applicazione espone nel browser esclusivamente la publishable key prevista da Supabase. Non usa e non deve mai usare chiavi `service_role` o secret.
 
 ## Sviluppo locale

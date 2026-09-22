@@ -20,6 +20,7 @@ const BASE_NAV = [
   { id: "graffiti", label: "Graffiti / Writing", mark: "04" },
   { id: "photography", label: "Fotografia", mark: "05", future: true },
   { id: "applications", label: "Candidature", mark: "06" },
+  { id: "materials", label: "Materiali", mark: "07" },
 ];
 
 const URGENCY_ORDER = {
@@ -86,6 +87,43 @@ const EMPTY_APPLICATION = {
   contact_name: "",
   contact_email: "",
 };
+
+const MATERIAL_AREAS = [
+  ["vfx_cgi_ai", "VFX / CGI / AI", "cyan"],
+  ["art", "ART", "rose"],
+  ["street_art_graffiti", "STREET ART / GRAFFITI", "amber"],
+  ["photography", "FOTOGRAFIA", "violet"],
+];
+
+const MATERIAL_TYPES = [
+  "CV",
+  "Portfolio",
+  "Showreel",
+  "Bio",
+  "Artist statement",
+  "Case study",
+  "Immagine",
+  "Altro",
+];
+
+const EMPTY_MATERIAL = {
+  name: "",
+  material_type: "Portfolio",
+  areas: [],
+  url: "",
+  version_label: "",
+  notes: "",
+};
+
+const MATERIAL_MAX_BYTES = 25 * 1024 * 1024;
+
+function safeFileName(value) {
+  return value
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "file";
+}
 
 function personalStatusLabel(value) {
   return PERSONAL_STATUSES.find(([id]) => id === value)?.[1] || "Da valutare";
@@ -182,6 +220,7 @@ function Login() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setBusy(true);
     setMessage("");
 
@@ -256,6 +295,8 @@ function App({ session }) {
   const [personalError, setPersonalError] = useState("");
   const [applications, setApplications] = useState([]);
   const [applicationError, setApplicationError] = useState("");
+  const [materials, setMaterials] = useState([]);
+  const [materialError, setMaterialError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -339,6 +380,29 @@ function App({ session }) {
     };
   }, [session.user.id]);
 
+  useEffect(() => {
+    let active = true;
+    setMaterialError("");
+    supabase
+      .from("materials")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("updated_at", { ascending: false })
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) {
+          setMaterialError(
+            "L’archivio materiali non è disponibile. Riprova dopo aver aggiornato la pagina.",
+          );
+          return;
+        }
+        setMaterials(data || []);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
   async function savePersonalState(opportunityId, values) {
     const payload = {
       user_id: session.user.id,
@@ -415,6 +479,107 @@ function App({ session }) {
     setApplications((current) =>
       current.filter((entry) => entry.opportunity_id !== opportunityId),
     );
+  }
+
+  async function createMaterial(values, file) {
+    let storagePath = null;
+    if (file) {
+      if (file.size > MATERIAL_MAX_BYTES) {
+        throw new Error("Il file supera il limite di 25 MB.");
+      }
+      storagePath = `${session.user.id}/${crypto.randomUUID()}/${safeFileName(file.name)}`;
+      const { error: uploadError } = await supabase.storage
+        .from("materials")
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          contentType: file.type,
+          upsert: false,
+        });
+      if (uploadError) throw uploadError;
+    }
+
+    const payload = {
+      user_id: session.user.id,
+      name: values.name.trim(),
+      material_type: values.material_type,
+      areas: values.areas,
+      url: values.url.trim() || null,
+      storage_path: storagePath,
+      version_label: values.version_label.trim() || null,
+      notes: values.notes.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: insertError } = await supabase
+      .from("materials")
+      .insert(payload)
+      .select()
+      .single();
+    if (insertError) {
+      if (storagePath) {
+        await supabase.storage.from("materials").remove([storagePath]);
+      }
+      throw insertError;
+    }
+    setMaterials((current) => [data, ...current]);
+    return data;
+  }
+
+  async function saveMaterial(id, values) {
+    const payload = {
+      name: values.name.trim(),
+      material_type: values.material_type,
+      areas: values.areas,
+      url: values.url.trim() || null,
+      version_label: values.version_label.trim() || null,
+      notes: values.notes.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: saveError } = await supabase
+      .from("materials")
+      .update(payload)
+      .eq("id", id)
+      .eq("user_id", session.user.id)
+      .select()
+      .single();
+    if (saveError) throw saveError;
+    setMaterials((current) =>
+      current.map((entry) => (entry.id === id ? data : entry)),
+    );
+    return data;
+  }
+
+  async function deleteMaterial(material) {
+    if (material.storage_path) {
+      const { error: storageError } = await supabase.storage
+        .from("materials")
+        .remove([material.storage_path]);
+      if (storageError) throw storageError;
+    }
+    const { error: deleteError } = await supabase
+      .from("materials")
+      .delete()
+      .eq("id", material.id)
+      .eq("user_id", session.user.id);
+    if (deleteError) throw deleteError;
+    setMaterials((current) =>
+      current.filter((entry) => entry.id !== material.id),
+    );
+  }
+
+  async function downloadMaterial(material) {
+    if (!material.storage_path) return;
+    const { data, error: downloadError } = await supabase.storage
+      .from("materials")
+      .download(material.storage_path);
+    if (downloadError) throw downloadError;
+    const url = URL.createObjectURL(data);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = material.storage_path.split("/").pop() || material.name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function handleSignOut() {
@@ -551,6 +716,8 @@ function App({ session }) {
       ? "Oggi"
       : view === "applications"
         ? "Candidature"
+        : view === "materials"
+          ? "Materiali"
         : BASE_NAV.find((item) => item.id === view)?.label;
 
   return (
@@ -572,12 +739,12 @@ function App({ session }) {
               <b>{item.label}</b>
               {item.disabled && <small>PREVISTA</small>}
               {item.id === "applications" && <small>{applications.length}</small>}
+              {item.id === "materials" && <small>{materials.length}</small>}
             </button>
           ))}
         </nav>
         <div className="future-nav">
           <p>PROSSIME FASI</p>
-          <span>Materiali</span>
           <span>Studi monitorati</span>
           <span>Storico</span>
           <span>Impostazioni</span>
@@ -630,6 +797,12 @@ function App({ session }) {
             <span>{applicationError}</span>
           </div>
         )}
+        {materialError && (
+          <div className="error personal-error" role="alert">
+            <strong>Materiali non disponibili</strong>
+            <span>{materialError}</span>
+          </div>
+        )}
         {!feed && !error && (
           <div className="loading">
             <i />
@@ -639,7 +812,15 @@ function App({ session }) {
 
         {feed && (
           <>
-            {view === "applications" ? (
+            {view === "materials" ? (
+              <MaterialVault
+                materials={materials}
+                onCreate={createMaterial}
+                onSave={saveMaterial}
+                onDelete={deleteMaterial}
+                onDownload={downloadMaterial}
+              />
+            ) : view === "applications" ? (
               <ApplicationsBoard
                 applications={applications}
                 opportunityMap={opportunityMap}
@@ -1192,6 +1373,356 @@ function OpportunityCard({
               </button>
             )}
             {message && <span role="status">{message}</span>}
+          </div>
+        </form>
+      )}
+    </article>
+  );
+}
+
+function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
+  const [form, setForm] = useState({ ...EMPTY_MATERIAL });
+  const [file, setFile] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleArea(area) {
+    setForm((current) => ({
+      ...current,
+      areas: current.areas.includes(area)
+        ? current.areas.filter((value) => value !== area)
+        : [...current.areas, area],
+    }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setMessage("");
+    if (!form.areas.length) {
+      setMessage("Seleziona almeno un’area.");
+      return;
+    }
+    if (!material.storage_path && !form.url.trim()) {
+      setMessage("Questo materiale richiede un link esterno.");
+      return;
+    }
+    if (!file && !form.url.trim()) {
+      setMessage("Scegli un file oppure inserisci un link.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onCreate(form, file);
+      setForm({ ...EMPTY_MATERIAL });
+      setFile(null);
+      formElement.reset();
+      setMessage("Materiale aggiunto e protetto.");
+    } catch (uploadError) {
+      setMessage(uploadError?.message || "Caricamento non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const visible =
+    filter === "all"
+      ? materials
+      : materials.filter((entry) => entry.areas.includes(filter));
+
+  return (
+    <section className="materials-section">
+      <div className="section-title material-title">
+        <div>
+          <p className="eyebrow">ARCHIVIO PRIVATO</p>
+          <h2>Material Vault</h2>
+          <p>Un solo file può essere collegato a più aree, senza duplicazioni.</p>
+        </div>
+        <strong>{materials.length} MATERIALI</strong>
+      </div>
+
+      <form className="material-create" onSubmit={handleSubmit}>
+        <div className="material-create-head">
+          <div>
+            <p className="eyebrow">NUOVO MATERIALE</p>
+            <h3>Carica file o collega risorsa</h3>
+          </div>
+          <small>Privato · massimo 25 MB per file</small>
+        </div>
+        <div className="material-form-grid">
+          <label>
+            <span>Nome</span>
+            <input
+              name="name"
+              value={form.name}
+              onChange={updateField}
+              placeholder="Es. Showreel compositing 2026"
+              maxLength="200"
+              required
+            />
+          </label>
+          <label>
+            <span>Tipo</span>
+            <select name="material_type" value={form.material_type} onChange={updateField}>
+              {MATERIAL_TYPES.map((value) => <option key={value}>{value}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Versione</span>
+            <input
+              name="version_label"
+              value={form.version_label}
+              onChange={updateField}
+              placeholder="Es. IT 2026 / v2"
+              maxLength="100"
+            />
+          </label>
+          <label>
+            <span>File</span>
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.mp4,.doc,.docx,.txt"
+              onChange={(event) => setFile(event.target.files?.[0] || null)}
+            />
+          </label>
+          <label className="wide">
+            <span>Link esterno, utile per video grandi</span>
+            <input
+              type="url"
+              name="url"
+              value={form.url}
+              onChange={updateField}
+              placeholder="https://…"
+            />
+          </label>
+          <fieldset className="wide material-area-picker">
+            <legend>Aree, selezionane una o più</legend>
+            {MATERIAL_AREAS.map(([value, label, tone]) => (
+              <label className={tone} key={value}>
+                <input
+                  type="checkbox"
+                  checked={form.areas.includes(value)}
+                  onChange={() => toggleArea(value)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+          <label className="wide">
+            <span>Note</span>
+            <textarea
+              name="notes"
+              value={form.notes}
+              onChange={updateField}
+              rows="3"
+              maxLength="5000"
+              placeholder="Contenuto, destinazione, aggiornamenti da fare…"
+            />
+          </label>
+        </div>
+        <div className="material-create-actions">
+          <button type="submit" disabled={busy}>
+            {busy ? "Caricamento…" : "Aggiungi materiale"}
+          </button>
+          {message && <span role="status">{message}</span>}
+        </div>
+      </form>
+
+      <div className="material-tabs" role="tablist" aria-label="Filtra materiali">
+        <button
+          type="button"
+          className={filter === "all" ? "active" : ""}
+          onClick={() => setFilter("all")}
+        >
+          Tutti <b>{materials.length}</b>
+        </button>
+        {MATERIAL_AREAS.map(([value, label]) => (
+          <button
+            type="button"
+            className={filter === value ? "active" : ""}
+            onClick={() => setFilter(value)}
+            key={value}
+          >
+            {label} <b>{materials.filter((entry) => entry.areas.includes(value)).length}</b>
+          </button>
+        ))}
+      </div>
+
+      <div className="material-list">
+        {visible.map((material) => (
+          <MaterialCard
+            key={material.id}
+            material={material}
+            onSave={onSave}
+            onDelete={onDelete}
+            onDownload={onDownload}
+          />
+        ))}
+        {!visible.length && (
+          <div className="material-empty">
+            <strong>Nessun materiale in questa area</strong>
+            <span>Usa il modulo qui sopra per aggiungere il primo.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MaterialCard({ material, onSave, onDelete, onDownload }) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({
+    name: material.name,
+    material_type: material.material_type,
+    areas: material.areas || [],
+    url: material.url || "",
+    version_label: material.version_label || "",
+    notes: material.notes || "",
+  });
+
+  useEffect(() => {
+    setForm({
+      name: material.name,
+      material_type: material.material_type,
+      areas: material.areas || [],
+      url: material.url || "",
+      version_label: material.version_label || "",
+      notes: material.notes || "",
+    });
+  }, [material]);
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleArea(area) {
+    setForm((current) => ({
+      ...current,
+      areas: current.areas.includes(area)
+        ? current.areas.filter((value) => value !== area)
+        : [...current.areas, area],
+    }));
+  }
+
+  async function handleSave(event) {
+    event.preventDefault();
+    if (!form.areas.length) {
+      setMessage("Seleziona almeno un’area.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(material.id, form);
+      setMessage("Modifiche salvate.");
+      setEditing(false);
+    } catch {
+      setMessage("Salvataggio non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Eliminare questo materiale e il suo file privato?")) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await onDelete(material);
+    } catch {
+      setMessage("Eliminazione non riuscita.");
+      setBusy(false);
+    }
+  }
+
+  async function handleDownload() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onDownload(material);
+    } catch {
+      setMessage("Download non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="material-card">
+      <div className="material-card-main">
+        <div className="material-icon">{material.storage_path ? "FILE" : "LINK"}</div>
+        <div>
+          <div className="material-meta">
+            <span>{material.material_type}</span>
+            {material.version_label && <span>{material.version_label}</span>}
+          </div>
+          <h3>{material.name}</h3>
+          <div className="material-tags">
+            {MATERIAL_AREAS.filter(([value]) => material.areas.includes(value)).map(
+              ([value, label, tone]) => <span className={tone} key={value}>{label}</span>,
+            )}
+          </div>
+          {material.notes && <p>{material.notes}</p>}
+        </div>
+      </div>
+      <div className="material-card-actions">
+        {material.storage_path && (
+          <button type="button" onClick={handleDownload} disabled={busy}>Scarica</button>
+        )}
+        {material.url && (
+          <a href={material.url} target="_blank" rel="noreferrer">Apri link ↗</a>
+        )}
+        <button type="button" onClick={() => setEditing((value) => !value)}>
+          {editing ? "Chiudi" : "Modifica"}
+        </button>
+        <button type="button" className="delete-material" onClick={handleDelete} disabled={busy}>
+          Elimina
+        </button>
+      </div>
+      {message && <span className="material-message" role="status">{message}</span>}
+      {editing && (
+        <form className="material-edit" onSubmit={handleSave}>
+          <label>
+            <span>Nome</span>
+            <input name="name" value={form.name} onChange={updateField} required />
+          </label>
+          <label>
+            <span>Tipo</span>
+            <select name="material_type" value={form.material_type} onChange={updateField}>
+              {MATERIAL_TYPES.map((value) => <option key={value}>{value}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Versione</span>
+            <input name="version_label" value={form.version_label} onChange={updateField} />
+          </label>
+          <label>
+            <span>Link esterno</span>
+            <input type="url" name="url" value={form.url} onChange={updateField} />
+          </label>
+          <fieldset className="wide material-area-picker">
+            <legend>Aree</legend>
+            {MATERIAL_AREAS.map(([value, label, tone]) => (
+              <label className={tone} key={value}>
+                <input type="checkbox" checked={form.areas.includes(value)} onChange={() => toggleArea(value)} />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+          <label className="wide">
+            <span>Note</span>
+            <textarea name="notes" value={form.notes} onChange={updateField} rows="3" />
+          </label>
+          <div className="wide material-edit-actions">
+            <button type="submit" disabled={busy}>{busy ? "Salvataggio…" : "Salva modifiche"}</button>
           </div>
         </form>
       )}
