@@ -21,6 +21,7 @@ const BASE_NAV = [
   { id: "photography", label: "Fotografia", mark: "05", future: true },
   { id: "applications", label: "Candidature", mark: "06" },
   { id: "materials", label: "Materiali", mark: "07" },
+  { id: "studios", label: "Studi monitorati", mark: "08" },
 ];
 
 const URGENCY_ORDER = {
@@ -113,6 +114,16 @@ const EMPTY_MATERIAL = {
   url: "",
   version_label: "",
   notes: "",
+};
+
+const EMPTY_STUDIO = {
+  name: "",
+  website_url: "",
+  focus_areas: [],
+  location: "",
+  notes: "",
+  next_check_date: "",
+  is_active: true,
 };
 
 const MATERIAL_MAX_BYTES = 25 * 1024 * 1024;
@@ -296,6 +307,8 @@ function App({ session }) {
   const [applicationError, setApplicationError] = useState("");
   const [materials, setMaterials] = useState([]);
   const [materialError, setMaterialError] = useState("");
+  const [studios, setStudios] = useState([]);
+  const [studioError, setStudioError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -396,6 +409,29 @@ function App({ session }) {
           return;
         }
         setMaterials(data || []);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    let active = true;
+    setStudioError("");
+    supabase
+      .from("monitored_studios")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("updated_at", { ascending: false })
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) {
+          setStudioError(
+            "Gli studi monitorati non sono disponibili. Riprova dopo aver aggiornato la pagina.",
+          );
+          return;
+        }
+        setStudios(data || []);
       });
     return () => {
       active = false;
@@ -581,6 +617,82 @@ function App({ session }) {
     URL.revokeObjectURL(url);
   }
 
+  async function createStudio(values) {
+    const payload = {
+      user_id: session.user.id,
+      name: values.name.trim(),
+      website_url: values.website_url.trim() || null,
+      focus_areas: values.focus_areas,
+      location: values.location.trim() || null,
+      notes: values.notes.trim() || null,
+      next_check_date: values.next_check_date || null,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: insertError } = await supabase
+      .from("monitored_studios")
+      .insert(payload)
+      .select()
+      .single();
+    if (insertError) throw insertError;
+    setStudios((current) => [data, ...current]);
+    return data;
+  }
+
+  async function saveStudio(id, values) {
+    const payload = {
+      name: values.name.trim(),
+      website_url: values.website_url.trim() || null,
+      focus_areas: values.focus_areas,
+      location: values.location.trim() || null,
+      notes: values.notes.trim() || null,
+      next_check_date: values.next_check_date || null,
+      is_active: Boolean(values.is_active),
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: saveError } = await supabase
+      .from("monitored_studios")
+      .update(payload)
+      .eq("id", id)
+      .eq("user_id", session.user.id)
+      .select()
+      .single();
+    if (saveError) throw saveError;
+    setStudios((current) =>
+      current.map((entry) => (entry.id === id ? data : entry)),
+    );
+    return data;
+  }
+
+  async function markStudioChecked(studio) {
+    const { data, error: saveError } = await supabase
+      .from("monitored_studios")
+      .update({
+        last_checked_at: new Date().toISOString(),
+        next_check_date: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", studio.id)
+      .eq("user_id", session.user.id)
+      .select()
+      .single();
+    if (saveError) throw saveError;
+    setStudios((current) =>
+      current.map((entry) => (entry.id === studio.id ? data : entry)),
+    );
+    return data;
+  }
+
+  async function deleteStudio(id) {
+    const { error: deleteError } = await supabase
+      .from("monitored_studios")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", session.user.id);
+    if (deleteError) throw deleteError;
+    setStudios((current) => current.filter((entry) => entry.id !== id));
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut();
   }
@@ -635,6 +747,20 @@ function App({ session }) {
       .filter((entry) => entry.timing)
       .sort((a, b) => a.timing.days - b.timing.days);
   }, [applications, opportunityMap, personalStates]);
+  const studioReminders = useMemo(
+    () =>
+      studios
+        .filter((entry) => entry.is_active && entry.next_check_date)
+        .map((entry) => ({
+          studioId: entry.id,
+          date: entry.next_check_date,
+          studio: entry,
+          timing: reminderTiming(entry.next_check_date),
+        }))
+        .filter((entry) => entry.timing)
+        .sort((a, b) => a.timing.days - b.timing.days),
+    [studios],
+  );
   const areaCounts = Object.fromEntries(
     Object.keys(AREAS).map((area) => [
       area,
@@ -715,8 +841,10 @@ function App({ session }) {
       ? "Oggi"
       : view === "applications"
         ? "Candidature"
-        : view === "materials"
+      : view === "materials"
           ? "Materiali"
+        : view === "studios"
+          ? "Studi monitorati"
         : BASE_NAV.find((item) => item.id === view)?.label;
 
   return (
@@ -739,12 +867,12 @@ function App({ session }) {
               {item.disabled && <small>PREVISTA</small>}
               {item.id === "applications" && <small>{applications.length}</small>}
               {item.id === "materials" && <small>{materials.length}</small>}
+              {item.id === "studios" && <small>{studios.filter((entry) => entry.is_active).length}</small>}
             </button>
           ))}
         </nav>
         <div className="future-nav">
           <p>PROSSIME FASI</p>
-          <span>Studi monitorati</span>
           <span>Storico</span>
           <span>Impostazioni</span>
         </div>
@@ -802,6 +930,12 @@ function App({ session }) {
             <span>{materialError}</span>
           </div>
         )}
+        {studioError && (
+          <div className="error personal-error" role="alert">
+            <strong>Studi monitorati non disponibili</strong>
+            <span>{studioError}</span>
+          </div>
+        )}
         {!feed && !error && (
           <div className="loading">
             <i />
@@ -811,7 +945,15 @@ function App({ session }) {
 
         {feed && (
           <>
-            {view === "materials" ? (
+            {view === "studios" ? (
+              <StudiosVault
+                studios={studios}
+                onCreate={createStudio}
+                onSave={saveStudio}
+                onMarkChecked={markStudioChecked}
+                onDelete={deleteStudio}
+              />
+            ) : view === "materials" ? (
               <MaterialVault
                 materials={materials}
                 onCreate={createMaterial}
@@ -833,8 +975,11 @@ function App({ session }) {
                     counts={counts}
                     opportunities={live}
                     reminders={reminders}
+                    studioReminders={studioReminders}
                     applicationCount={applications.length}
                     onOpenApplications={() => setView("applications")}
+                    studioCount={studios.filter((entry) => entry.is_active).length}
+                    onOpenStudios={() => setView("studios")}
                   />
                 )}
                 <section className="results">
@@ -893,8 +1038,11 @@ function Dashboard({
   counts,
   opportunities,
   reminders,
+  studioReminders,
   applicationCount,
   onOpenApplications,
+  studioCount,
+  onOpenStudios,
 }) {
   const deadlines = [...opportunities]
     .filter((item) => item.daysRemaining != null && item.daysRemaining >= 0)
@@ -953,15 +1101,39 @@ function Dashboard({
       </div>
       <ReminderPanel
         reminders={reminders}
+        studioReminders={studioReminders}
         applicationCount={applicationCount}
         onOpenApplications={onOpenApplications}
+        studioCount={studioCount}
+        onOpenStudios={onOpenStudios}
       />
     </section>
   );
 }
 
-function ReminderPanel({ reminders, applicationCount, onOpenApplications }) {
-  const actionable = reminders.filter((entry) => entry.timing.days <= 3);
+function ReminderPanel({
+  reminders,
+  studioReminders,
+  applicationCount,
+  onOpenApplications,
+  studioCount,
+  onOpenStudios,
+}) {
+  const combined = [
+    ...reminders.map((entry) => ({
+      ...entry,
+      key: `opportunity-${entry.opportunityId}`,
+      title: entry.opportunity?.title || entry.opportunityId,
+      subtitle: entry.opportunity?.org || entry.source,
+    })),
+    ...studioReminders.map((entry) => ({
+      ...entry,
+      key: `studio-${entry.studioId}`,
+      title: entry.studio.name,
+      subtitle: entry.studio.location || "Controllo studio",
+    })),
+  ].sort((a, b) => a.timing.days - b.timing.days);
+  const actionable = combined.filter((entry) => entry.timing.days <= 3);
   const overdue = actionable.filter((entry) => entry.timing.days < 0).length;
   const today = actionable.filter((entry) => entry.timing.days === 0).length;
   const soon = actionable.filter((entry) => entry.timing.days > 0).length;
@@ -973,9 +1145,14 @@ function ReminderPanel({ reminders, applicationCount, onOpenApplications }) {
           <p className="eyebrow">PROMEMORIA OPERATIVI</p>
           <h3>Follow-up</h3>
         </div>
-        <button type="button" onClick={onOpenApplications}>
-          Candidature {applicationCount}
-        </button>
+        <div className="reminder-links">
+          <button type="button" onClick={onOpenApplications}>
+            Candidature {applicationCount}
+          </button>
+          <button type="button" onClick={onOpenStudios}>
+            Studi {studioCount}
+          </button>
+        </div>
       </div>
       <div className="reminder-metrics">
         <span className={overdue ? "danger" : ""}>
@@ -992,16 +1169,14 @@ function ReminderPanel({ reminders, applicationCount, onOpenApplications }) {
         <div className="reminder-list">
           {actionable.slice(0, 6).map((entry) => (
             <article
-              key={entry.opportunityId}
+              key={entry.key}
               className={`reminder-item ${entry.timing.tone}`}
             >
               <b>{entry.timing.label}</b>
               <span>
-                <strong>
-                  {entry.opportunity?.title || entry.opportunityId}
-                </strong>
+                <strong>{entry.title}</strong>
                 <small>
-                  {entry.opportunity?.org || entry.source} · {formatDate(entry.date)}
+                  {entry.subtitle} · {formatDate(entry.date)}
                 </small>
               </span>
             </article>
@@ -1373,6 +1548,355 @@ function OpportunityCard({
             )}
             {message && <span role="status">{message}</span>}
           </div>
+        </form>
+      )}
+    </article>
+  );
+}
+
+function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
+  const [form, setForm] = useState({ ...EMPTY_STUDIO });
+  const [filter, setFilter] = useState("active");
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleArea(area) {
+    setForm((current) => ({
+      ...current,
+      focus_areas: current.focus_areas.includes(area)
+        ? current.focus_areas.filter((value) => value !== area)
+        : [...current.focus_areas, area],
+    }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setMessage("");
+    if (!form.focus_areas.length) {
+      setMessage("Seleziona almeno un’area.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onCreate(form);
+      setForm({ ...EMPTY_STUDIO });
+      setMessage("Studio aggiunto al monitoraggio.");
+    } catch (saveError) {
+      setMessage(
+        saveError?.code === "23505"
+          ? "Questo studio è già presente."
+          : "Salvataggio non riuscito.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const needle = query.trim().toLowerCase();
+  const visible = studios
+    .filter((entry) => {
+      if (filter === "active") return entry.is_active;
+      if (filter === "archived") return !entry.is_active;
+      return true;
+    })
+    .filter(
+      (entry) =>
+        !needle ||
+        [entry.name, entry.location, entry.notes].some((value) =>
+          String(value || "").toLowerCase().includes(needle),
+        ),
+    )
+    .sort((a, b) => {
+      const aDate = a.next_check_date || "9999-12-31";
+      const bDate = b.next_check_date || "9999-12-31";
+      return aDate.localeCompare(bDate) || a.name.localeCompare(b.name);
+    });
+
+  const activeCount = studios.filter((entry) => entry.is_active).length;
+  const archivedCount = studios.length - activeCount;
+
+  return (
+    <section className="studios-section">
+      <div className="section-title studio-title">
+        <div>
+          <p className="eyebrow">RADAR PRIVATO</p>
+          <h2>Studi e organizzazioni</h2>
+          <p>Salva chi vuoi seguire e programma il prossimo controllo.</p>
+        </div>
+        <strong>{activeCount} ATTIVI</strong>
+      </div>
+
+      <form className="studio-create" onSubmit={handleSubmit}>
+        <div className="studio-create-head">
+          <div>
+            <p className="eyebrow">NUOVO MONITORAGGIO</p>
+            <h3>Aggiungi studio o organizzazione</h3>
+          </div>
+          <small>Privato · nessun servizio esterno</small>
+        </div>
+        <div className="studio-form-grid">
+          <label>
+            <span>Nome</span>
+            <input
+              name="name"
+              value={form.name}
+              onChange={updateField}
+              placeholder="Es. 22DOGS"
+              maxLength="200"
+              required
+            />
+          </label>
+          <label>
+            <span>Località</span>
+            <input
+              name="location"
+              value={form.location}
+              onChange={updateField}
+              placeholder="Es. Milano, Italia"
+              maxLength="300"
+            />
+          </label>
+          <label>
+            <span>Sito</span>
+            <input
+              type="url"
+              name="website_url"
+              value={form.website_url}
+              onChange={updateField}
+              placeholder="https://…"
+            />
+          </label>
+          <label>
+            <span>Prossimo controllo</span>
+            <input
+              type="date"
+              name="next_check_date"
+              value={form.next_check_date}
+              onChange={updateField}
+            />
+          </label>
+          <fieldset className="wide material-area-picker">
+            <legend>Aree, selezionane una o più</legend>
+            {MATERIAL_AREAS.map(([value, label, tone]) => (
+              <label className={tone} key={value}>
+                <input
+                  type="checkbox"
+                  checked={form.focus_areas.includes(value)}
+                  onChange={() => toggleArea(value)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+          <label className="wide">
+            <span>Note</span>
+            <textarea
+              name="notes"
+              value={form.notes}
+              onChange={updateField}
+              rows="3"
+              maxLength="5000"
+              placeholder="Contatti, reparti, pagina careers, motivo del monitoraggio…"
+            />
+          </label>
+        </div>
+        <div className="studio-create-actions">
+          <button type="submit" disabled={busy}>
+            {busy ? "Salvataggio…" : "Aggiungi studio"}
+          </button>
+          {message && <span role="status">{message}</span>}
+        </div>
+      </form>
+
+      <div className="studio-toolbar">
+        <div className="studio-tabs">
+          <button type="button" className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}>Attivi <b>{activeCount}</b></button>
+          <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Tutti <b>{studios.length}</b></button>
+          <button type="button" className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Archiviati <b>{archivedCount}</b></button>
+        </div>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Cerca studio o località…"
+          aria-label="Cerca studi monitorati"
+        />
+      </div>
+
+      <div className="studio-list">
+        {visible.map((studio) => (
+          <StudioCard
+            key={studio.id}
+            studio={studio}
+            onSave={onSave}
+            onMarkChecked={onMarkChecked}
+            onDelete={onDelete}
+          />
+        ))}
+        {!visible.length && (
+          <div className="studio-empty">
+            <strong>Nessuno studio in questa vista</strong>
+            <span>Aggiungi il primo monitoraggio con il modulo qui sopra.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({
+    name: studio.name,
+    website_url: studio.website_url || "",
+    focus_areas: studio.focus_areas || [],
+    location: studio.location || "",
+    notes: studio.notes || "",
+    next_check_date: studio.next_check_date || "",
+    is_active: studio.is_active,
+  });
+
+  useEffect(() => {
+    setForm({
+      name: studio.name,
+      website_url: studio.website_url || "",
+      focus_areas: studio.focus_areas || [],
+      location: studio.location || "",
+      notes: studio.notes || "",
+      next_check_date: studio.next_check_date || "",
+      is_active: studio.is_active,
+    });
+  }, [studio]);
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleArea(area) {
+    setForm((current) => ({
+      ...current,
+      focus_areas: current.focus_areas.includes(area)
+        ? current.focus_areas.filter((value) => value !== area)
+        : [...current.focus_areas, area],
+    }));
+  }
+
+  async function save(values, close = true) {
+    if (!values.focus_areas.length) {
+      setMessage("Seleziona almeno un’area.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(studio.id, values);
+      setMessage("Modifiche salvate.");
+      if (close) setEditing(false);
+    } catch (saveError) {
+      setMessage(
+        saveError?.code === "23505"
+          ? "Esiste già uno studio con questo nome."
+          : "Salvataggio non riuscito.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    await save(form);
+  }
+
+  async function handleToggleActive() {
+    await save({ ...form, is_active: !studio.is_active }, false);
+  }
+
+  async function handleChecked() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onMarkChecked(studio);
+      setMessage("Controllo registrato. Promemoria chiuso.");
+    } catch {
+      setMessage("Aggiornamento non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Eliminare definitivamente questo studio monitorato?")) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await onDelete(studio.id);
+    } catch {
+      setMessage("Eliminazione non riuscita.");
+      setBusy(false);
+    }
+  }
+
+  const timing = reminderTiming(studio.next_check_date);
+
+  return (
+    <article className={`studio-card ${studio.is_active ? "" : "archived"}`}>
+      <div className="studio-card-main">
+        <div className="studio-status">
+          <i />
+          <span>{studio.is_active ? "ATTIVO" : "ARCHIVIATO"}</span>
+        </div>
+        <div>
+          <h3>{studio.name}</h3>
+          <p>{studio.location || "Località non indicata"}</p>
+          <div className="material-tags">
+            {MATERIAL_AREAS.filter(([value]) => studio.focus_areas.includes(value)).map(
+              ([value, label, tone]) => <span className={tone} key={value}>{label}</span>,
+            )}
+          </div>
+          {studio.notes && <p className="studio-notes">{studio.notes}</p>}
+        </div>
+        <div className={`studio-check ${timing?.tone || "future"}`}>
+          <span>PROSSIMO CONTROLLO</span>
+          <strong>{studio.next_check_date ? formatDate(studio.next_check_date) : "Non programmato"}</strong>
+          {timing && <small>{timing.label}</small>}
+          {studio.last_checked_at && <em>Ultimo: {formatDate(studio.last_checked_at)}</em>}
+        </div>
+      </div>
+      <div className="studio-card-actions">
+        {studio.website_url && <a href={studio.website_url} target="_blank" rel="noreferrer">Apri sito ↗</a>}
+        {studio.next_check_date && <button type="button" onClick={handleChecked} disabled={busy}>Controllato oggi</button>}
+        <button type="button" onClick={() => setEditing((value) => !value)}>{editing ? "Chiudi" : "Modifica"}</button>
+        <button type="button" onClick={handleToggleActive} disabled={busy}>{studio.is_active ? "Archivia" : "Riattiva"}</button>
+        <button type="button" className="delete-studio" onClick={handleDelete} disabled={busy}>Elimina</button>
+      </div>
+      {message && <span className="studio-message" role="status">{message}</span>}
+      {editing && (
+        <form className="studio-edit" onSubmit={handleSubmit}>
+          <label><span>Nome</span><input name="name" value={form.name} onChange={updateField} required /></label>
+          <label><span>Località</span><input name="location" value={form.location} onChange={updateField} /></label>
+          <label><span>Sito</span><input type="url" name="website_url" value={form.website_url} onChange={updateField} /></label>
+          <label><span>Prossimo controllo</span><input type="date" name="next_check_date" value={form.next_check_date} onChange={updateField} /></label>
+          <fieldset className="wide material-area-picker">
+            <legend>Aree</legend>
+            {MATERIAL_AREAS.map(([value, label, tone]) => (
+              <label className={tone} key={value}>
+                <input type="checkbox" checked={form.focus_areas.includes(value)} onChange={() => toggleArea(value)} />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+          <label className="wide"><span>Note</span><textarea name="notes" value={form.notes} onChange={updateField} rows="3" /></label>
+          <div className="wide studio-edit-actions"><button type="submit" disabled={busy}>{busy ? "Salvataggio…" : "Salva modifiche"}</button></div>
         </form>
       )}
     </article>

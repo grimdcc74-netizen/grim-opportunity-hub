@@ -10,6 +10,8 @@ La sezione Candidature organizza il percorso in una Kanban privata: preparazione
 
 Il Material Vault conserva file privati o collegamenti esterni, separati per VFX / CGI / AI, ART, Street Art / Graffiti e Fotografia. Uno stesso materiale può appartenere a più aree senza duplicare il file. Il bucket Supabase è privato, applica regole RLS per proprietario e limita ogni caricamento a 25 MB per tutelare il piano gratuito. Per showreel e video più grandi è previsto il collegamento a una risorsa esterna.
 
+La sezione Studi monitorati raccoglie studi VFX, gallerie, fondazioni e organizzazioni creative. Ogni voce può avere sito, località, aree, note, data del prossimo controllo e ultimo controllo registrato. I controlli scaduti, previsti oggi o entro tre giorni compaiono nei promemoria della pagina Oggi. Le voci possono essere archiviate senza perderne i dati.
+
 L'applicazione espone nel browser esclusivamente la publishable key prevista da Supabase. Non usa e non deve mai usare chiavi `service_role` o secret.
 
 ## Sviluppo locale
