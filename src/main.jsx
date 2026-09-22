@@ -220,7 +220,6 @@ function Login() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    const formElement = event.currentTarget;
     setBusy(true);
     setMessage("");
 
@@ -1403,13 +1402,10 @@ function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setMessage("");
     if (!form.areas.length) {
       setMessage("Seleziona almeno un’area.");
-      return;
-    }
-    if (!material.storage_path && !form.url.trim()) {
-      setMessage("Questo materiale richiede un link esterno.");
       return;
     }
     if (!file && !form.url.trim()) {
@@ -1616,6 +1612,10 @@ function MaterialCard({ material, onSave, onDelete, onDownload }) {
     event.preventDefault();
     if (!form.areas.length) {
       setMessage("Seleziona almeno un’area.");
+      return;
+    }
+    if (!material.storage_path && !form.url.trim()) {
+      setMessage("Questo materiale richiede un link esterno.");
       return;
     }
     setBusy(true);
