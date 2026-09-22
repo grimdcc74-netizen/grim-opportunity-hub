@@ -154,6 +154,13 @@ const DEFAULT_PREFERENCES = {
   reminder_window_days: 3,
 };
 
+const REMINDER_WINDOW_OPTIONS = [
+  ...Array.from({ length: 15 }, (_, index) => index + 1),
+  20,
+  25,
+  30,
+];
+
 const START_VIEW_OPTIONS = [
   ["today", "Oggi"],
   ["work", "Lavoro / VFX"],
@@ -1426,7 +1433,9 @@ function ReminderPanel({
         </div>
       ) : (
         <p className="reminder-empty">
-          Nessun follow-up scaduto o previsto nei prossimi 3 giorni.
+          Nessun follow-up scaduto o previsto {windowDays === 1
+            ? "nel prossimo giorno"
+            : `nei prossimi ${windowDays} giorni`}.
         </p>
       )}
     </section>
@@ -1907,8 +1916,10 @@ function SettingsView({
               value={form.reminder_window_days}
               onChange={updateField}
             >
-              {[3, 7, 14, 30].map((days) => (
-                <option value={days} key={days}>{days} giorni</option>
+              {REMINDER_WINDOW_OPTIONS.map((days) => (
+                <option value={days} key={days}>
+                  {days} {days === 1 ? "giorno" : "giorni"}
+                </option>
               ))}
             </select>
           </label>
