@@ -250,6 +250,7 @@ function urgencyOf(item) {
 
 function Root() {
   const [session, setSession] = useState(undefined);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -259,7 +260,8 @@ function Root() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       if (active) setSession(nextSession);
     });
 
@@ -278,6 +280,10 @@ function Root() {
     );
   }
 
+  if (session && passwordRecovery) {
+    return <PasswordReset onComplete={() => setPasswordRecovery(false)} />;
+  }
+
   return session ? <App session={session} /> : <Login />;
 }
 
@@ -286,6 +292,7 @@ function Login() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [mode, setMode] = useState("login");
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -300,6 +307,39 @@ function Login() {
     setBusy(false);
   }
 
+  async function handleGoogleLogin() {
+    setBusy(true);
+    setMessage("");
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/` },
+    });
+    if (authError) {
+      setMessage("Accesso con Google non riuscito. Riprova tra poco.");
+      setBusy(false);
+    }
+  }
+
+  async function handlePasswordRecovery(event) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/`,
+    });
+    setMessage(
+      authError
+        ? "Invio non riuscito. Controlla l’indirizzo e riprova tra poco."
+        : "Email inviata. Apri il link ricevuto per scegliere una nuova password.",
+    );
+    setBusy(false);
+  }
+
+  function changeMode(nextMode) {
+    setMode(nextMode);
+    setMessage("");
+  }
+
   return (
     <main className="login-shell">
       <section className="login-panel">
@@ -308,12 +348,27 @@ function Login() {
           <strong>Opportunity Hub</strong>
         </div>
         <p className="eyebrow">AREA PRIVATA</p>
-        <h1>Accedi</h1>
+        <h1>{mode === "login" ? "Accedi" : "Recupera accesso"}</h1>
         <p className="login-copy">
-          Opportunità pubbliche e gestione personale restano separate e
-          protette.
+          {mode === "login"
+            ? "Opportunità pubbliche e gestione personale restano separate e protette."
+            : "Inserisci la tua email. Riceverai un link sicuro per scegliere una nuova password."}
         </p>
-        <form onSubmit={handleSubmit}>
+        {mode === "login" && (
+          <>
+            <button
+              type="button"
+              className="google-login"
+              onClick={handleGoogleLogin}
+              disabled={busy}
+            >
+              <span aria-hidden="true">G</span>
+              Continua con Google
+            </button>
+            <div className="login-divider"><span>oppure</span></div>
+          </>
+        )}
+        <form onSubmit={mode === "login" ? handleSubmit : handlePasswordRecovery}>
           <label>
             <span>Email</span>
             <input
@@ -324,26 +379,110 @@ function Login() {
               required
             />
           </label>
-          <label>
-            <span>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
+          {mode === "login" && (
+            <label>
+              <span>Password</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+          )}
           {message && (
             <div className="login-error" role="alert">
               {message}
             </div>
           )}
           <button type="submit" disabled={busy}>
-            {busy ? "Accesso…" : "Entra"}
+            {busy
+              ? "Attendi…"
+              : mode === "login"
+                ? "Accedi con email e password"
+                : "Invia link di recupero"}
           </button>
         </form>
+        <button
+          type="button"
+          className="login-secondary"
+          onClick={() => changeMode(mode === "login" ? "recovery" : "login")}
+          disabled={busy}
+        >
+          {mode === "login" ? "Password dimenticata?" : "Torna all’accesso"}
+        </button>
         <small>Nessuna registrazione disponibile da questa applicazione.</small>
+      </section>
+    </main>
+  );
+}
+
+function PasswordReset({ onComplete }) {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setMessage("");
+    if (password.length < 8) {
+      setMessage("Usa almeno 8 caratteri.");
+      return;
+    }
+    if (password !== confirmation) {
+      setMessage("Le due password non coincidono.");
+      return;
+    }
+    setBusy(true);
+    const { error: authError } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (authError) {
+      setMessage("Aggiornamento non riuscito. Richiedi un nuovo link e riprova.");
+      return;
+    }
+    onComplete();
+  }
+
+  return (
+    <main className="login-shell">
+      <section className="login-panel">
+        <div className="login-brand">
+          <span>GRIM</span>
+          <strong>Opportunity Hub</strong>
+        </div>
+        <p className="eyebrow">RECUPERO SICURO</p>
+        <h1>Nuova password</h1>
+        <p className="login-copy">Scegli una nuova password per il tuo account.</p>
+        <form onSubmit={handleSubmit}>
+          <label>
+            <span>Nuova password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="new-password"
+              minLength="8"
+              required
+            />
+          </label>
+          <label>
+            <span>Ripeti nuova password</span>
+            <input
+              type="password"
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="new-password"
+              minLength="8"
+              required
+            />
+          </label>
+          {message && <div className="login-error" role="alert">{message}</div>}
+          <button type="submit" disabled={busy}>
+            {busy ? "Salvataggio…" : "Salva nuova password"}
+          </button>
+        </form>
       </section>
     </main>
   );
@@ -1949,7 +2088,7 @@ function SettingsView({
             <div><dt>Piano</dt><dd>Supabase Free</dd></div>
           </dl>
           <p className="settings-note">
-            Il recupero password verrà collegato quando l’app avrà un indirizzo online stabile.
+            Recupero password attivo dalla pagina di accesso.
           </p>
           <button type="button" className="settings-signout" onClick={onSignOut}>Esci dall’account</button>
         </section>
