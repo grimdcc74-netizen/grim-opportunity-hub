@@ -182,6 +182,16 @@ function safeFileName(value) {
     .replace(/^-|-$/g, "") || "file";
 }
 
+function safeExternalUrl(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function personalStatusLabel(value) {
   return PERSONAL_STATUSES.find(([id]) => id === value)?.[1] || "Da valutare";
 }
@@ -1435,6 +1445,9 @@ function Dashboard({
     .filter((item) => item.daysRemaining != null && item.daysRemaining >= 0)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
     .slice(0, 4);
+  const nextActionUrl = safeExternalUrl(
+    deadlines[0]?.applicationUrl || deadlines[0]?.sourceUrl,
+  );
   return (
     <section>
       <div className="metric-grid">
@@ -1460,9 +1473,9 @@ function Dashboard({
             {deadlines[0]?.org ||
               "Il radar è aggiornato e pronto per la revisione."}
           </p>
-          {deadlines[0] && (
+          {nextActionUrl && (
             <a
-              href={deadlines[0].applicationUrl || deadlines[0].sourceUrl}
+              href={nextActionUrl}
               target="_blank"
               rel="noreferrer"
             >
@@ -1683,6 +1696,7 @@ function OpportunityCard({
     item.applicationUrl ||
     item.canonicalUrl ||
     item.sourceUrl;
+  const safeDestination = safeExternalUrl(destination);
 
   useEffect(() => {
     setForm({
@@ -1821,9 +1835,9 @@ function OpportunityCard({
         >
           {editing ? "×" : "+"}
         </button>
-        {destination ? (
+        {safeDestination ? (
           <a
-            href={destination}
+            href={safeDestination}
             target="_blank"
             rel="noreferrer"
             aria-label={`Apri ${item.title}`}
@@ -2558,6 +2572,7 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
   }
 
   const timing = reminderTiming(studio.next_check_date);
+  const websiteUrl = safeExternalUrl(studio.website_url);
 
   return (
     <article className={`studio-card ${studio.is_active ? "" : "archived"}`}>
@@ -2584,7 +2599,7 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
         </div>
       </div>
       <div className="studio-card-actions">
-        {studio.website_url && <a href={studio.website_url} target="_blank" rel="noreferrer">Apri sito ↗</a>}
+        {websiteUrl && <a href={websiteUrl} target="_blank" rel="noreferrer">Apri sito ↗</a>}
         {studio.next_check_date && <button type="button" onClick={handleChecked} disabled={busy}>Controllato oggi</button>}
         <button type="button" onClick={() => setEditing((value) => !value)}>{editing ? "Chiudi" : "Modifica"}</button>
         <button type="button" onClick={handleToggleActive} disabled={busy}>{studio.is_active ? "Archivia" : "Riattiva"}</button>
@@ -2817,6 +2832,7 @@ function MaterialCard({ material, onSave, onDelete, onDownload }) {
     version_label: material.version_label || "",
     notes: material.notes || "",
   });
+  const materialUrl = safeExternalUrl(material.url);
 
   useEffect(() => {
     setForm({
@@ -2912,8 +2928,8 @@ function MaterialCard({ material, onSave, onDelete, onDownload }) {
         {material.storage_path && (
           <button type="button" onClick={handleDownload} disabled={busy}>Scarica</button>
         )}
-        {material.url && (
-          <a href={material.url} target="_blank" rel="noreferrer">Apri link ↗</a>
+        {materialUrl && (
+          <a href={materialUrl} target="_blank" rel="noreferrer">Apri link ↗</a>
         )}
         <button type="button" onClick={() => setEditing((value) => !value)}>
           {editing ? "Chiudi" : "Modifica"}
@@ -3092,6 +3108,7 @@ function ApplicationCard({ application, opportunity, onSave, onDelete }) {
     opportunity?.directApplyUrl ||
     opportunity?.applicationUrl ||
     opportunity?.sourceUrl;
+  const safeDestination = safeExternalUrl(destination);
 
   return (
     <article className="application-card">
@@ -3132,8 +3149,8 @@ function ApplicationCard({ application, opportunity, onSave, onDelete }) {
         <button type="button" onClick={() => setEditing((value) => !value)}>
           {editing ? "Chiudi" : "Dettagli"}
         </button>
-        {destination && (
-          <a href={destination} target="_blank" rel="noreferrer">
+        {safeDestination && (
+          <a href={safeDestination} target="_blank" rel="noreferrer">
             Apri ↗
           </a>
         )}
