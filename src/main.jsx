@@ -5,6 +5,7 @@ import "./styles.css";
 
 const FEED_URL =
   "https://raw.githubusercontent.com/grimdcc74-netizen/grim-opportunity-data/main/data/current.json";
+const APP_BUILD_TIME = __APP_BUILD_TIME__;
 
 const AREAS = {
   work: { label: "WORK / VFX", short: "WORK", tone: "cyan" },
@@ -1259,10 +1260,11 @@ function App({ session }) {
             <h1>{heading}</h1>
           </div>
           <div className="updated">
-            <span>ULTIMO AGGIORNAMENTO</span>
-            <strong>
-              {feed?.generatedAt ? formatDate(feed.generatedAt) : "…"}
-            </strong>
+            <span>APP AGGIORNATA</span>
+            <strong>{formatDate(APP_BUILD_TIME)}</strong>
+            <small>
+              Dati verificati {feed?.generatedAt ? formatDate(feed.generatedAt) : "…"}
+            </small>
           </div>
         </header>
 
