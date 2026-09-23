@@ -22,7 +22,7 @@ const BASE_NAV = [
   { id: "photography", label: "Fotografia", mark: "05", future: true },
   { id: "applications", label: "Candidature", mark: "06" },
   { id: "materials", label: "Materiali", mark: "07" },
-  { id: "studios", label: "Studi monitorati", mark: "08" },
+  { id: "studios", label: "Fonti monitorate", mark: "08" },
   { id: "history", label: "Storico", mark: "09" },
   { id: "settings", label: "Impostazioni", mark: "10" },
 ];
@@ -136,18 +136,18 @@ const HISTORY_EVENT_LABELS = {
   material_created: "Materiale aggiunto",
   material_updated: "Materiale modificato",
   material_deleted: "Materiale eliminato",
-  studio_created: "Studio aggiunto",
-  studio_checked: "Studio controllato",
-  studio_archived: "Studio archiviato",
-  studio_reactivated: "Studio riattivato",
-  studio_updated: "Studio modificato",
-  studio_deleted: "Studio eliminato",
+  studio_created: "Fonte aggiunta",
+  studio_checked: "Fonte controllata",
+  studio_archived: "Fonte sospesa",
+  studio_reactivated: "Fonte riattivata",
+  studio_updated: "Fonte modificata",
+  studio_deleted: "Fonte eliminata",
 };
 
 const HISTORY_ENTITY_LABELS = {
   application: "CANDIDATURA",
   material: "MATERIALE",
-  studio: "STUDIO",
+  studio: "FONTE",
 };
 
 const DEFAULT_PREFERENCES = {
@@ -169,7 +169,7 @@ const START_VIEW_OPTIONS = [
   ["graffiti", "Graffiti / Writing"],
   ["applications", "Candidature"],
   ["materials", "Materiali"],
-  ["studios", "Studi monitorati"],
+  ["studios", "Fonti monitorate"],
   ["history", "Storico"],
 ];
 
@@ -697,7 +697,7 @@ function App({ session }) {
         if (!active) return;
         if (loadError) {
           setStudioError(
-            "Gli studi monitorati non sono disponibili. Riprova dopo aver aggiornato la pagina.",
+            "Le fonti monitorate non sono disponibili. Riprova dopo aver aggiornato la pagina.",
           );
           return;
         }
@@ -1200,7 +1200,7 @@ function App({ session }) {
       : view === "materials"
           ? "Materiali"
         : view === "studios"
-          ? "Studi monitorati"
+          ? "Fonti monitorate"
         : view === "history"
           ? "Storico"
         : view === "settings"
@@ -1294,7 +1294,7 @@ function App({ session }) {
         )}
         {studioError && (
           <div className="error personal-error" role="alert">
-            <strong>Studi monitorati non disponibili</strong>
+            <strong>Fonti monitorate non disponibili</strong>
             <span>{studioError}</span>
           </div>
         )}
@@ -1534,7 +1534,7 @@ function ReminderPanel({
       ...entry,
       key: `studio-${entry.studioId}`,
       title: entry.studio.name,
-      subtitle: entry.studio.location || "Controllo studio",
+      subtitle: entry.studio.location || "Controllo fonte",
     })),
   ].sort((a, b) => a.timing.days - b.timing.days);
   const windowDays = Number(reminderWindowDays) || 3;
@@ -1555,7 +1555,7 @@ function ReminderPanel({
             Candidature {applicationCount}
           </button>
           <button type="button" onClick={onOpenStudios}>
-            Studi {studioCount}
+            Fonti {studioCount}
           </button>
         </div>
       </div>
@@ -2125,7 +2125,7 @@ function SettingsView({
             <span><b>{counts.personalStates}</b> opportunità gestite</span>
             <span><b>{counts.applications}</b> candidature</span>
             <span><b>{counts.materials}</b> materiali</span>
-            <span><b>{counts.studios}</b> studi</span>
+            <span><b>{counts.studios}</b> fonti</span>
             <span><b>{counts.history}</b> eventi storici</span>
           </div>
           <div className="settings-actions">
@@ -2230,7 +2230,7 @@ function HistoryView({ entries, loading, opportunityMap }) {
           <option value="all">Tutte le attività</option>
           <option value="application">Candidature</option>
           <option value="material">Materiali</option>
-          <option value="studio">Studi</option>
+          <option value="studio">Fonti monitorate</option>
         </select>
         <select
           value={period}
@@ -2249,7 +2249,7 @@ function HistoryView({ entries, loading, opportunityMap }) {
           <strong>Nessuna attività registrata</strong>
           <span>
             Da ora compariranno qui le modifiche importanti a candidature,
-            materiali e studi monitorati.
+            materiali e fonti monitorate.
           </span>
         </div>
       ) : (
@@ -2321,11 +2321,11 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
     try {
       await onCreate(form);
       setForm({ ...EMPTY_STUDIO });
-      setMessage("Studio aggiunto al monitoraggio.");
+      setMessage("Fonte aggiunta al monitoraggio quotidiano.");
     } catch (saveError) {
       setMessage(
         saveError?.code === "23505"
-          ? "Questo studio è già presente."
+          ? "Questa fonte è già presente."
           : "Salvataggio non riuscito.",
       );
     } finally {
@@ -2361,8 +2361,8 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
       <div className="section-title studio-title">
         <div>
           <p className="eyebrow">RADAR PRIVATO</p>
-          <h2>Studi e organizzazioni</h2>
-          <p>Salva chi vuoi seguire e programma il prossimo controllo.</p>
+          <h2>Siti e fonti da controllare</h2>
+          <p>Ogni fonte attiva entra automaticamente nella ricerca del report giornaliero.</p>
         </div>
         <strong>{activeCount} ATTIVI</strong>
       </div>
@@ -2371,18 +2371,18 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
         <div className="studio-create-head">
           <div>
             <p className="eyebrow">NUOVO MONITORAGGIO</p>
-            <h3>Aggiungi studio o organizzazione</h3>
+            <h3>Aggiungi sito o fonte</h3>
           </div>
-          <small>Privato · nessun servizio esterno</small>
+          <small>Privato · collegato al radar delle 7:30</small>
         </div>
         <div className="studio-form-grid">
           <label>
-            <span>Nome</span>
+            <span>Nome del sito o della fonte</span>
             <input
               name="name"
               value={form.name}
               onChange={updateField}
-              placeholder="Es. 22DOGS"
+              placeholder="Es. 22DOGS Careers"
               maxLength="200"
               required
             />
@@ -2398,13 +2398,14 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
             />
           </label>
           <label>
-            <span>Sito</span>
+            <span>Link da monitorare</span>
             <input
               type="url"
               name="website_url"
               value={form.website_url}
               onChange={updateField}
               placeholder="https://…"
+              required
             />
           </label>
           <label>
@@ -2417,7 +2418,7 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
             />
           </label>
           <fieldset className="wide material-area-picker">
-            <legend>Aree, selezionane una o più</legend>
+            <legend>Tipologia, selezionane una o più</legend>
             {MATERIAL_AREAS.map(([value, label, tone]) => (
               <label className={tone} key={value}>
                 <input
@@ -2437,30 +2438,30 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
               onChange={updateField}
               rows="3"
               maxLength="5000"
-              placeholder="Contatti, reparti, pagina careers, motivo del monitoraggio…"
+              placeholder="Pagina careers, tipo di opportunità, indicazioni utili per la ricerca…"
             />
           </label>
         </div>
         <div className="studio-create-actions">
           <button type="submit" disabled={busy}>
-            {busy ? "Salvataggio…" : "Aggiungi studio"}
+            {busy ? "Salvataggio…" : "Aggiungi fonte"}
           </button>
           {message && <span role="status">{message}</span>}
         </div>
       </form>
 
       <div className="studio-toolbar">
-      <div className="studio-tabs" role="tablist" aria-label="Filtra studi monitorati">
+      <div className="studio-tabs" role="tablist" aria-label="Filtra fonti monitorate">
         <button type="button" role="tab" aria-selected={filter === "active"} className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}>Attivi <b>{activeCount}</b></button>
         <button type="button" role="tab" aria-selected={filter === "all"} className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Tutti <b>{studios.length}</b></button>
-        <button type="button" role="tab" aria-selected={filter === "archived"} className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Archiviati <b>{archivedCount}</b></button>
+        <button type="button" role="tab" aria-selected={filter === "archived"} className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Sospese <b>{archivedCount}</b></button>
         </div>
         <input
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Cerca studio o località…"
-          aria-label="Cerca studi monitorati"
+          placeholder="Cerca sito, fonte o località…"
+          aria-label="Cerca fonti monitorate"
         />
       </div>
 
@@ -2476,8 +2477,8 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
         ))}
         {!visible.length && (
           <div className="studio-empty">
-            <strong>Nessuno studio in questa vista</strong>
-            <span>Aggiungi il primo monitoraggio con il modulo qui sopra.</span>
+            <strong>Nessuna fonte in questa vista</strong>
+            <span>Aggiungi il primo sito da monitorare con il modulo qui sopra.</span>
           </div>
         )}
       </div>
@@ -2539,7 +2540,7 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
     } catch (saveError) {
       setMessage(
         saveError?.code === "23505"
-          ? "Esiste già uno studio con questo nome."
+          ? "Esiste già una fonte con questo nome."
           : "Salvataggio non riuscito.",
       );
     } finally {
@@ -2561,7 +2562,7 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
     setMessage("");
     try {
       await onMarkChecked(studio);
-      setMessage("Controllo registrato. Promemoria chiuso.");
+      setMessage("Controllo della fonte registrato. Promemoria chiuso.");
     } catch {
       setMessage("Aggiornamento non riuscito.");
     } finally {
@@ -2570,7 +2571,7 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
   }
 
   async function handleDelete() {
-    if (!window.confirm("Eliminare definitivamente questo studio monitorato?")) return;
+    if (!window.confirm("Eliminare definitivamente questa fonte monitorata?")) return;
     setBusy(true);
     setMessage("");
     try {
@@ -2602,7 +2603,7 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
           {studio.notes && <p className="studio-notes">{studio.notes}</p>}
         </div>
         <div className={`studio-check ${timing?.tone || "future"}`}>
-          <span>PROSSIMO CONTROLLO</span>
+          <span>PROSSIMO CONTROLLO FONTE</span>
           <strong>{studio.next_check_date ? formatDate(studio.next_check_date) : "Non programmato"}</strong>
           {timing && <small>{timing.label}</small>}
           {studio.last_checked_at && <em>Ultimo: {formatDate(studio.last_checked_at)}</em>}
@@ -2610,20 +2611,20 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
       </div>
       <div className="studio-card-actions">
         {websiteUrl && <a href={websiteUrl} target="_blank" rel="noreferrer">Apri sito ↗</a>}
-        {studio.next_check_date && <button type="button" onClick={handleChecked} disabled={busy}>Controllato oggi</button>}
+        {studio.next_check_date && <button type="button" onClick={handleChecked} disabled={busy}>Controllata oggi</button>}
         <button type="button" onClick={() => setEditing((value) => !value)}>{editing ? "Chiudi" : "Modifica"}</button>
-        <button type="button" onClick={handleToggleActive} disabled={busy}>{studio.is_active ? "Archivia" : "Riattiva"}</button>
+        <button type="button" onClick={handleToggleActive} disabled={busy}>{studio.is_active ? "Sospendi" : "Riattiva"}</button>
         <button type="button" className="delete-studio" onClick={handleDelete} disabled={busy}>Elimina</button>
       </div>
       {message && <span className="studio-message" role="status">{message}</span>}
       {editing && (
         <form className="studio-edit" onSubmit={handleSubmit}>
-          <label><span>Nome</span><input name="name" value={form.name} onChange={updateField} required /></label>
+          <label><span>Nome della fonte</span><input name="name" value={form.name} onChange={updateField} required /></label>
           <label><span>Località</span><input name="location" value={form.location} onChange={updateField} /></label>
-          <label><span>Sito</span><input type="url" name="website_url" value={form.website_url} onChange={updateField} /></label>
+          <label><span>Link da monitorare</span><input type="url" name="website_url" value={form.website_url} onChange={updateField} required /></label>
           <label><span>Prossimo controllo</span><input type="date" name="next_check_date" value={form.next_check_date} onChange={updateField} /></label>
           <fieldset className="wide material-area-picker">
-            <legend>Aree</legend>
+            <legend>Tipologia</legend>
             {MATERIAL_AREAS.map(([value, label, tone]) => (
               <label className={tone} key={value}>
                 <input type="checkbox" checked={form.focus_areas.includes(value)} onChange={() => toggleArea(value)} />
