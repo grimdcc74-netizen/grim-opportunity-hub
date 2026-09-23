@@ -1070,6 +1070,8 @@ function App({ session }) {
               key={item.id}
               className={view === item.id ? "active" : ""}
               disabled={item.disabled}
+              type="button"
+              aria-current={view === item.id ? "page" : undefined}
               onClick={() => !item.disabled && setView(item.id)}
             >
               <i>{item.mark}</i>
@@ -1088,7 +1090,7 @@ function App({ session }) {
         <div className="account">
           <span>{displayName}</span>
           <small>ACCESSO PRIVATO</small>
-          <button onClick={handleSignOut}>Esci</button>
+          <button type="button" onClick={handleSignOut}>Esci</button>
         </div>
         <div className="sync">
           <i />{" "}
@@ -1469,6 +1471,7 @@ function Filters({
       <label className="search">
         <span>⌕</span>
         <input
+          aria-label="Cerca opportunità"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Cerca titolo, studio, categoria…"
