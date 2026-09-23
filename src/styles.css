@@ -646,6 +646,7 @@ select:focus {
   font-size: 0.98rem;
   line-height: 1.2;
   letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
 }
 .opportunity-title p {
   margin-bottom: 0;
@@ -1311,6 +1312,7 @@ select:focus {
   }
   .sidebar nav button {
     min-width: max-content;
+    min-height: 44px;
     grid-template-columns: auto 1fr auto;
     gap: 8px;
     padding: 10px 12px;
@@ -1322,6 +1324,9 @@ select:focus {
   .account {
     margin-top: 12px;
     padding: 12px 2px 0;
+  }
+  .account > button {
+    min-height: 44px;
   }
   main {
     padding: 25px 15px 60px;
@@ -1374,7 +1379,7 @@ select:focus {
     grid-column: 1/-1;
   }
   .opportunity {
-    grid-template-columns: 1fr 48px;
+    grid-template-columns: 1fr 56px;
   }
   .rail {
     grid-column: 1/-1;
@@ -1399,6 +1404,13 @@ select:focus {
   .action {
     grid-column: 2;
     grid-row: 2;
+    padding-inline: 6px;
+  }
+  .action a,
+  .action i,
+  .action button {
+    width: 44px;
+    height: 44px;
   }
   .personal-editor {
     grid-row: 3;
@@ -1679,6 +1691,7 @@ select:focus {
 .material-card h3 {
   margin-bottom: 8px;
   font-size: 1.02rem;
+  overflow-wrap: anywhere;
 }
 .material-card p {
   max-width: 760px;
@@ -1953,6 +1966,7 @@ select:focus {
 .studio-card h3 {
   margin-bottom: 4px;
   font-size: 1.1rem;
+  overflow-wrap: anywhere;
 }
 .studio-card-main > div:nth-child(2) > p {
   margin-bottom: 10px;
@@ -2400,5 +2414,11 @@ select:focus {
   .studio-check { grid-column: auto; }
   .studio-card-actions,
   .studio-message { margin-left: 0; }
+  .material-card-actions button,
+  .material-card-actions a,
+  .studio-card-actions button,
+  .studio-card-actions a {
+    min-height: 44px;
+  }
   .reminder-links { justify-content: flex-start; }
 }
