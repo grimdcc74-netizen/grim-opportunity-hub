@@ -2220,13 +2220,21 @@ function HistoryView({ entries, loading, opportunityMap }) {
           placeholder="Cerca nello storico…"
           aria-label="Cerca nello storico"
         />
-        <select value={entity} onChange={(event) => setEntity(event.target.value)}>
+        <select
+          value={entity}
+          onChange={(event) => setEntity(event.target.value)}
+          aria-label="Tipo di attività"
+        >
           <option value="all">Tutte le attività</option>
           <option value="application">Candidature</option>
           <option value="material">Materiali</option>
           <option value="studio">Studi</option>
         </select>
-        <select value={period} onChange={(event) => setPeriod(event.target.value)}>
+        <select
+          value={period}
+          onChange={(event) => setPeriod(event.target.value)}
+          aria-label="Periodo dello storico"
+        >
           <option value="all">Tutto il periodo</option>
           <option value="7">Ultimi 7 giorni</option>
           <option value="30">Ultimi 30 giorni</option>
@@ -2440,10 +2448,10 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
       </form>
 
       <div className="studio-toolbar">
-        <div className="studio-tabs">
-          <button type="button" className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}>Attivi <b>{activeCount}</b></button>
-          <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Tutti <b>{studios.length}</b></button>
-          <button type="button" className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Archiviati <b>{archivedCount}</b></button>
+      <div className="studio-tabs" role="tablist" aria-label="Filtra studi monitorati">
+        <button type="button" role="tab" aria-selected={filter === "active"} className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}>Attivi <b>{activeCount}</b></button>
+        <button type="button" role="tab" aria-selected={filter === "all"} className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Tutti <b>{studios.length}</b></button>
+        <button type="button" role="tab" aria-selected={filter === "archived"} className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>Archiviati <b>{archivedCount}</b></button>
         </div>
         <input
           type="search"
@@ -2782,6 +2790,8 @@ function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
       <div className="material-tabs" role="tablist" aria-label="Filtra materiali">
         <button
           type="button"
+          role="tab"
+          aria-selected={filter === "all"}
           className={filter === "all" ? "active" : ""}
           onClick={() => setFilter("all")}
         >
@@ -2790,6 +2800,8 @@ function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
         {MATERIAL_AREAS.map(([value, label]) => (
           <button
             type="button"
+            role="tab"
+            aria-selected={filter === value}
             className={filter === value ? "active" : ""}
             onClick={() => setFilter(value)}
             key={value}
