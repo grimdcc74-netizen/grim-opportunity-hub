@@ -193,6 +193,19 @@ function safeExternalUrl(value) {
   }
 }
 
+function normalizedSourceUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value.trim());
+    if (!['http:', 'https:'].includes(url.protocol)) return "";
+    url.hash = "";
+    url.hostname = url.hostname.toLowerCase();
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+}
+
 function personalStatusLabel(value) {
   return PERSONAL_STATUSES.find(([id]) => id === value)?.[1] || "Da valutare";
 }
@@ -891,7 +904,7 @@ function App({ session }) {
     const payload = {
       user_id: session.user.id,
       name: values.name.trim(),
-      website_url: values.website_url.trim() || null,
+      website_url: normalizedSourceUrl(values.website_url) || null,
       focus_areas: values.focus_areas,
       location: values.location.trim() || null,
       notes: values.notes.trim() || null,
@@ -912,7 +925,7 @@ function App({ session }) {
   async function saveStudio(id, values) {
     const payload = {
       name: values.name.trim(),
-      website_url: values.website_url.trim() || null,
+      website_url: normalizedSourceUrl(values.website_url) || null,
       focus_areas: values.focus_areas,
       location: values.location.trim() || null,
       notes: values.notes.trim() || null,
@@ -2317,6 +2330,14 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
       setMessage("Seleziona almeno un’area.");
       return;
     }
+    const normalizedUrl = normalizedSourceUrl(form.website_url);
+    const duplicate = studios.some(
+      (entry) => normalizedSourceUrl(entry.website_url) === normalizedUrl,
+    );
+    if (normalizedUrl && duplicate) {
+      setMessage("Questa fonte è già monitorata.");
+      return;
+    }
     setBusy(true);
     try {
       await onCreate(form);
@@ -2325,7 +2346,7 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
     } catch (saveError) {
       setMessage(
         saveError?.code === "23505"
-          ? "Questa fonte è già presente."
+          ? "Questa fonte è già monitorata."
           : "Salvataggio non riuscito.",
       );
     } finally {
@@ -2540,7 +2561,7 @@ function StudioCard({ studio, onSave, onMarkChecked, onDelete }) {
     } catch (saveError) {
       setMessage(
         saveError?.code === "23505"
-          ? "Esiste già una fonte con questo nome."
+          ? "Questa fonte o questo link è già monitorato."
           : "Salvataggio non riuscito.",
       );
     } finally {
