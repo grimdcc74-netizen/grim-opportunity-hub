@@ -2939,7 +2939,7 @@ function SeniorityLegend() {
     <details className="seniority-legend">
       <summary>Legenda seniority <span>Come leggere e impostare i pallini</span></summary>
       <div className="seniority-legend-grid">
-        <div><span className="legend-dots empty" aria-hidden="true"><i /><i /><i /><i /><i /><i /></span><strong>0 · Da definire</strong><small>Nessun livello selezionato</small></div>
+        <div><span className="legend-dots" aria-hidden="true"><i /><i /><i /><i /><i /><i /></span><strong>0 · Da definire</strong><small>Nessun livello selezionato</small></div>
         {SENIORITY_LEVELS.map(([level, label]) => (
           <div key={level}>
             <span className="legend-dots" aria-hidden="true">{SENIORITY_LEVELS.map(([dot]) => <i className={dot <= level ? "filled" : ""} key={dot} />)}</span>
