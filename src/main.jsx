@@ -351,6 +351,38 @@ function urgencyOf(item) {
   return "LONG_RANGE";
 }
 
+function monitoredOpportunityToFeedItem(row) {
+  const timing = reminderTiming(row.deadline);
+  return {
+    id: row.id,
+    title: row.title,
+    org: row.organization,
+    area: row.area || "work",
+    category: row.category || "Fonte monitorata",
+    tag: row.category || "MONITORAGGIO",
+    score: 3,
+    summary: row.summary || "Opportunità rilevata da una fonte aggiunta al monitoraggio personale.",
+    relevance: "Rilevata automaticamente da una fonte pubblica monitorata.",
+    location: row.location || "Località non indicata",
+    country: row.country || "",
+    remotePolicy: row.remote_policy || null,
+    deadlineEuropeRome: row.deadline,
+    deadline: row.deadline,
+    daysRemaining: timing?.days ?? null,
+    firstSeen: row.first_seen,
+    lastVerifiedAt: row.last_verified_at,
+    liveStatus: row.live_status,
+    isNew: row.is_new,
+    changeType: row.change_type,
+    sourceUrl: row.source_url,
+    canonicalUrl: row.canonical_url,
+    applicationUrl: row.application_url || row.canonical_url,
+    directApplyUrl: row.application_url || row.canonical_url,
+    monitoringSourceId: row.source_id,
+    privateMonitoring: true,
+  };
+}
+
 function Root() {
   const [session, setSession] = useState(undefined);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
@@ -616,6 +648,11 @@ function App({ session }) {
   const [savedSearchSources, setSavedSearchSources] = useState([]);
   const [savedSearchMatches, setSavedSearchMatches] = useState([]);
   const [savedSearchError, setSavedSearchError] = useState("");
+  const [monitoredOpportunities, setMonitoredOpportunities] = useState([]);
+  const [monitoringRuns, setMonitoringRuns] = useState([]);
+  const [monitoringSourceRuns, setMonitoringSourceRuns] = useState([]);
+  const [monitoringError, setMonitoringError] = useState("");
+  const [monitoringBusy, setMonitoringBusy] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -681,6 +718,44 @@ function App({ session }) {
       setSavedSearchProfessions(results[1].data || []);
       setSavedSearchSources(results[2].data || []);
       setSavedSearchMatches(results[3].data || []);
+    });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    let active = true;
+    setMonitoringError("");
+    Promise.all([
+      supabase
+        .from("monitored_opportunities")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("last_seen", { ascending: false })
+        .limit(5000),
+      supabase
+        .from("monitoring_runs")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("started_at", { ascending: false })
+        .limit(30),
+      supabase
+        .from("monitoring_source_runs")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]).then((results) => {
+      if (!active) return;
+      const failed = results.find((result) => result.error);
+      if (failed?.error) {
+        setMonitoringError("Il monitoraggio automatico non è disponibile. Riprova dopo aver aggiornato la pagina.");
+        return;
+      }
+      setMonitoredOpportunities(results[0].data || []);
+      setMonitoringRuns(results[1].data || []);
+      setMonitoringSourceRuns(results[2].data || []);
     });
     return () => {
       active = false;
@@ -1293,6 +1368,78 @@ function App({ session }) {
     setSavedSearchMatches((current) => current.filter((entry) => entry.search_id !== id));
   }
 
+  async function refreshMonitoringData() {
+    const results = await Promise.all([
+      supabase
+        .from("monitored_opportunities")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("last_seen", { ascending: false })
+        .limit(5000),
+      supabase
+        .from("monitoring_runs")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("started_at", { ascending: false })
+        .limit(30),
+      supabase
+        .from("monitoring_source_runs")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabase
+        .from("saved_searches")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("priority", { ascending: false })
+        .order("updated_at", { ascending: false }),
+      supabase.from("saved_search_matches").select("*").limit(10000),
+      supabase
+        .from("monitored_studios")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("monitored_professions")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
+    ]);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) throw failed.error;
+    setMonitoredOpportunities(results[0].data || []);
+    setMonitoringRuns(results[1].data || []);
+    setMonitoringSourceRuns(results[2].data || []);
+    setSavedSearches(results[3].data || []);
+    setSavedSearchMatches(results[4].data || []);
+    setStudios(results[5].data || []);
+    setProfessions(results[6].data || []);
+  }
+
+  async function runMonitoringNow() {
+    setMonitoringBusy(true);
+    setMonitoringError("");
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "monitor-opportunities",
+        { body: { trigger: "manual" } },
+      );
+      if (invokeError) throw invokeError;
+      if (!data?.ok) throw new Error(data?.message || "Scansione non riuscita");
+      await refreshMonitoringData();
+      return data;
+    } catch (runError) {
+      setMonitoringError(
+        runError?.message || "La scansione non è riuscita. Controlla le fonti e riprova.",
+      );
+      throw runError;
+    } finally {
+      setMonitoringBusy(false);
+    }
+  }
+
   async function saveSettings(values) {
     const nextPreferences = {
       start_view: values.start_view,
@@ -1346,6 +1493,9 @@ function App({ session }) {
       "saved_search_professions",
       "saved_search_sources",
       "saved_search_matches",
+      "monitored_opportunities",
+      "monitoring_runs",
+      "monitoring_source_runs",
       "activity_history",
     ];
     const relationTables = new Set([
@@ -1392,20 +1542,34 @@ function App({ session }) {
     await supabase.auth.signOut();
   }
 
-  const opportunities = useMemo(
-    () =>
-      (feed?.opportunities || []).map((item) => ({
-        ...item,
-        urgencyComputed: urgencyOf(item),
-      })),
-    [feed],
+  const privateOpportunityItems = useMemo(
+    () => monitoredOpportunities.map(monitoredOpportunityToFeedItem),
+    [monitoredOpportunities],
   );
+  const opportunities = useMemo(() => {
+    const publicItems = feed?.opportunities || [];
+    const seenUrls = new Set();
+    return [...publicItems, ...privateOpportunityItems]
+      .filter((item) => {
+        const key = normalizedSourceUrl(
+          item.canonicalUrl || item.applicationUrl || item.directApplyUrl || item.sourceUrl,
+        );
+        if (!key) return true;
+        if (seenUrls.has(key)) return false;
+        seenUrls.add(key);
+        return true;
+      })
+      .map((item) => ({ ...item, urgencyComputed: urgencyOf(item) }));
+  }, [feed, privateOpportunityItems]);
 
   const live = opportunities.filter((item) => item.liveStatus === "LIVE");
-  const opportunityMap = useMemo(
-    () => Object.fromEntries(opportunities.map((item) => [item.id, item])),
-    [opportunities],
-  );
+  const opportunityMap = useMemo(() => {
+    const allItems = [
+      ...(feed?.opportunities || []),
+      ...privateOpportunityItems,
+    ].map((item) => ({ ...item, urgencyComputed: urgencyOf(item) }));
+    return Object.fromEntries(allItems.map((item) => [item.id, item]));
+  }, [feed, privateOpportunityItems]);
   const applicationMap = useMemo(
     () =>
       Object.fromEntries(
@@ -1596,6 +1760,17 @@ function App({ session }) {
             </small>
           </span>
         </div>
+        <div className="sync monitoring-sync">
+          <i className={monitoringRuns[0]?.status === "failed" ? "failed" : ""} />{" "}
+          <span>
+            Radar fonti
+            <small>
+              {monitoringRuns[0]
+                ? `${monitoringRuns[0].status === "completed" ? "Aggiornato" : monitoringRuns[0].status} · ${formatDate(monitoringRuns[0].started_at)}`
+                : "Prima scansione in attesa"}
+            </small>
+          </span>
+        </div>
       </aside>
 
       <main>
@@ -1655,6 +1830,12 @@ function App({ session }) {
             <span>{savedSearchError}</span>
           </div>
         )}
+        {monitoringError && (
+          <div className="error personal-error" role="alert">
+            <strong>Monitoraggio automatico non disponibile</strong>
+            <span>{monitoringError}</span>
+          </div>
+        )}
         {historyError && (
           <div className="error personal-error" role="alert">
             <strong>Storico non disponibile</strong>
@@ -1704,6 +1885,10 @@ function App({ session }) {
             ) : view === "studios" ? (
               <StudiosVault
                 studios={studios}
+                monitoringRuns={monitoringRuns}
+                monitoringSourceRuns={monitoringSourceRuns}
+                monitoringBusy={monitoringBusy}
+                onRunMonitoring={runMonitoringNow}
                 onCreate={createStudio}
                 onSave={saveStudio}
                 onMarkChecked={markStudioChecked}
@@ -3307,12 +3492,23 @@ function ProfessionCard({ profession, onSave, onDelete }) {
   );
 }
 
-function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
+function StudiosVault({
+  studios,
+  monitoringRuns,
+  monitoringSourceRuns,
+  monitoringBusy,
+  onRunMonitoring,
+  onCreate,
+  onSave,
+  onMarkChecked,
+  onDelete,
+}) {
   const [form, setForm] = useState({ ...EMPTY_STUDIO });
   const [filter, setFilter] = useState("active");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [runMessage, setRunMessage] = useState("");
 
   function updateField(event) {
     const { name, value } = event.target;
@@ -3381,6 +3577,25 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
 
   const activeCount = studios.filter((entry) => entry.is_active).length;
   const archivedCount = studios.length - activeCount;
+  const latestRun = monitoringRuns[0];
+  const latestSourceRuns = latestRun
+    ? monitoringSourceRuns.filter((entry) => entry.run_id === latestRun.id)
+    : [];
+
+  async function handleRunMonitoring() {
+    setRunMessage("");
+    try {
+      const result = await onRunMonitoring();
+      const run = result?.results?.[0];
+      setRunMessage(
+        run?.sources_total
+          ? `Scansione completata: ${run.opportunities_found || 0} opportunità rilevate e ${run.matches_found || 0} corrispondenze.`
+          : "Scansione completata. Aggiungi almeno una fonte attiva per ottenere risultati.",
+      );
+    } catch {
+      setRunMessage("Scansione non riuscita. Controlla i dettagli dell’ultimo tentativo.");
+    }
+  }
 
   return (
     <section className="studios-section">
@@ -3392,6 +3607,46 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
         </div>
         <strong>{activeCount} ATTIVI</strong>
       </div>
+
+      <details className="collapsible-panel monitoring-panel" open>
+        <summary>
+          <strong>Scansione automatica</strong>
+          <span>{latestRun ? formatDateTime(latestRun.started_at) : "Prima esecuzione in attesa"}</span>
+        </summary>
+        <div className="collapsible-content monitoring-status">
+          <div>
+            <span className={`monitoring-state ${latestRun?.status || "waiting"}`}>
+              {latestRun?.status === "completed"
+                ? "COMPLETATA"
+                : latestRun?.status === "partial"
+                  ? "PARZIALE"
+                  : latestRun?.status === "failed"
+                    ? "NON RIUSCITA"
+                    : "IN ATTESA"}
+            </span>
+            <p>Ogni giorno selezionato tra le 7:30 e le 8:30, ora italiana.</p>
+            {latestRun && (
+              <small>
+                {latestRun.sources_succeeded}/{latestRun.sources_total} fonti lette · {latestRun.opportunities_found} opportunità · {latestRun.matches_found} risultati nelle ricerche
+              </small>
+            )}
+          </div>
+          <button type="button" onClick={handleRunMonitoring} disabled={monitoringBusy || !activeCount}>
+            {monitoringBusy ? "Scansione in corso…" : "Avvia scansione ora"}
+          </button>
+          {runMessage && <span className="studio-message" role="status">{runMessage}</span>}
+          {!!latestSourceRuns.filter((entry) => entry.status === "failed").length && (
+            <details className="monitoring-errors">
+              <summary>Fonti non lette: {latestSourceRuns.filter((entry) => entry.status === "failed").length}</summary>
+              <ul>
+                {latestSourceRuns.filter((entry) => entry.status === "failed").map((entry) => (
+                  <li key={entry.id}><strong>{entry.source_name}</strong><span>{entry.error_message || "Risposta non leggibile"}</span></li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      </details>
 
       <details className="collapsible-panel create-panel">
         <summary><strong>Aggiungi sito o fonte</strong><span>Nuovo monitoraggio</span></summary>
