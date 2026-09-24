@@ -24,8 +24,9 @@ const BASE_NAV = [
   { id: "materials", label: "Materiali", mark: "07" },
   { id: "studios", label: "Fonti monitorate", mark: "08" },
   { id: "professions", label: "Professioni", mark: "09" },
-  { id: "history", label: "Storico", mark: "10" },
-  { id: "settings", label: "Impostazioni", mark: "11" },
+  { id: "searches", label: "Ricerche", mark: "10" },
+  { id: "history", label: "Storico", mark: "11" },
+  { id: "settings", label: "Impostazioni", mark: "12" },
 ];
 
 const URGENCY_ORDER = {
@@ -156,6 +157,32 @@ const EMPTY_PROFESSION = {
   notes: "",
 };
 
+const WEEK_DAYS = [
+  [1, "Lun"], [2, "Mar"], [3, "Mer"], [4, "Gio"],
+  [5, "Ven"], [6, "Sab"], [7, "Dom"],
+];
+
+const WORK_MODES = [
+  ["remote", "Remoto"],
+  ["hybrid", "Ibrido"],
+  ["on_site", "In sede"],
+];
+
+const EMPTY_SAVED_SEARCH = {
+  name: "",
+  description: "",
+  profession_levels: {},
+  include_keywords: "",
+  exclude_keywords: "",
+  locations: "",
+  work_modes: [],
+  days_of_week: [1, 2, 3, 4, 5, 6, 7],
+  use_all_sources: true,
+  source_ids: [],
+  priority: 3,
+  is_active: true,
+};
+
 const PROFESSION_HINTS = {
   "Matte Painter": "Lavoro diretto sugli shot per pubblicità e film.",
   "Matte Painter / Environment Generalist":
@@ -204,6 +231,7 @@ const START_VIEW_OPTIONS = [
   ["materials", "Materiali"],
   ["studios", "Fonti monitorate"],
   ["professions", "Professioni"],
+  ["searches", "Ricerche"],
   ["history", "Storico"],
 ];
 
@@ -238,6 +266,14 @@ function normalizedSourceUrl(value) {
   } catch {
     return "";
   }
+}
+
+function splitTerms(value) {
+  return String(value || "")
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item, index, items) => items.indexOf(item) === index);
 }
 
 function personalStatusLabel(value) {
@@ -566,6 +602,11 @@ function App({ session }) {
   const [studioError, setStudioError] = useState("");
   const [professions, setProfessions] = useState([]);
   const [professionError, setProfessionError] = useState("");
+  const [savedSearches, setSavedSearches] = useState([]);
+  const [savedSearchProfessions, setSavedSearchProfessions] = useState([]);
+  const [savedSearchSources, setSavedSearchSources] = useState([]);
+  const [savedSearchMatches, setSavedSearchMatches] = useState([]);
+  const [savedSearchError, setSavedSearchError] = useState("");
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -600,6 +641,38 @@ function App({ session }) {
       .then(({ data }) => {
         if (active && data?.display_name) setDisplayName(data.display_name);
       });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    let active = true;
+    setSavedSearchError("");
+    Promise.all([
+      supabase
+        .from("saved_searches")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("priority", { ascending: false })
+        .order("updated_at", { ascending: false }),
+      supabase.from("saved_search_professions").select("*").limit(10000),
+      supabase.from("saved_search_sources").select("*").limit(10000),
+      supabase.from("saved_search_matches").select("*").limit(10000),
+    ]).then((results) => {
+      if (!active) return;
+      const failed = results.find((result) => result.error);
+      if (failed?.error) {
+        setSavedSearchError(
+          "Le ricerche salvate non sono disponibili. Riprova dopo aver aggiornato la pagina.",
+        );
+        return;
+      }
+      setSavedSearches(results[0].data || []);
+      setSavedSearchProfessions(results[1].data || []);
+      setSavedSearchSources(results[2].data || []);
+      setSavedSearchMatches(results[3].data || []);
+    });
     return () => {
       active = false;
     };
@@ -1100,6 +1173,117 @@ function App({ session }) {
     setProfessions((current) => current.filter((entry) => entry.id !== id));
   }
 
+  function savedSearchPayload(values) {
+    return {
+      name: values.name.trim(),
+      description: values.description.trim() || null,
+      include_keywords: splitTerms(values.include_keywords),
+      exclude_keywords: splitTerms(values.exclude_keywords),
+      locations: splitTerms(values.locations),
+      work_modes: values.work_modes,
+      days_of_week: values.days_of_week.map(Number).sort((a, b) => a - b),
+      use_all_sources: Boolean(values.use_all_sources),
+      priority: Number(values.priority),
+      is_active: Boolean(values.is_active),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function savedSearchRelationRows(searchId, values) {
+    const professionRows = Object.entries(values.profession_levels).map(
+      ([professionId, level]) => ({
+        search_id: searchId,
+        profession_id: professionId,
+        seniority_level: level ? Number(level) : null,
+      }),
+    );
+    const sourceRows = values.use_all_sources
+      ? []
+      : values.source_ids.map((sourceId) => ({
+          search_id: searchId,
+          source_id: Number(sourceId),
+        }));
+    return { professionRows, sourceRows };
+  }
+
+  async function createSavedSearch(values) {
+    const { data: search, error: insertError } = await supabase
+      .from("saved_searches")
+      .insert({ user_id: session.user.id, ...savedSearchPayload(values) })
+      .select()
+      .single();
+    if (insertError) throw insertError;
+    const { professionRows, sourceRows } = savedSearchRelationRows(search.id, values);
+    const relationResults = await Promise.all([
+      professionRows.length
+        ? supabase.from("saved_search_professions").insert(professionRows).select()
+        : Promise.resolve({ data: [], error: null }),
+      sourceRows.length
+        ? supabase.from("saved_search_sources").insert(sourceRows).select()
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    const relationError = relationResults.find((result) => result.error)?.error;
+    if (relationError) {
+      await supabase.from("saved_searches").delete().eq("id", search.id);
+      throw relationError;
+    }
+    setSavedSearches((current) => [search, ...current]);
+    setSavedSearchProfessions((current) => [...current, ...(relationResults[0].data || [])]);
+    setSavedSearchSources((current) => [...current, ...(relationResults[1].data || [])]);
+    return search;
+  }
+
+  async function saveSavedSearch(id, values) {
+    const { data: search, error: updateError } = await supabase
+      .from("saved_searches")
+      .update(savedSearchPayload(values))
+      .eq("id", id)
+      .eq("user_id", session.user.id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
+    const deleteResults = await Promise.all([
+      supabase.from("saved_search_professions").delete().eq("search_id", id),
+      supabase.from("saved_search_sources").delete().eq("search_id", id),
+    ]);
+    const deleteError = deleteResults.find((result) => result.error)?.error;
+    if (deleteError) throw deleteError;
+    const { professionRows, sourceRows } = savedSearchRelationRows(id, values);
+    const insertResults = await Promise.all([
+      professionRows.length
+        ? supabase.from("saved_search_professions").insert(professionRows).select()
+        : Promise.resolve({ data: [], error: null }),
+      sourceRows.length
+        ? supabase.from("saved_search_sources").insert(sourceRows).select()
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    const insertError = insertResults.find((result) => result.error)?.error;
+    if (insertError) throw insertError;
+    setSavedSearches((current) => current.map((entry) => (entry.id === id ? search : entry)));
+    setSavedSearchProfessions((current) => [
+      ...current.filter((entry) => entry.search_id !== id),
+      ...(insertResults[0].data || []),
+    ]);
+    setSavedSearchSources((current) => [
+      ...current.filter((entry) => entry.search_id !== id),
+      ...(insertResults[1].data || []),
+    ]);
+    return search;
+  }
+
+  async function deleteSavedSearch(id) {
+    const { error: deleteError } = await supabase
+      .from("saved_searches")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", session.user.id);
+    if (deleteError) throw deleteError;
+    setSavedSearches((current) => current.filter((entry) => entry.id !== id));
+    setSavedSearchProfessions((current) => current.filter((entry) => entry.search_id !== id));
+    setSavedSearchSources((current) => current.filter((entry) => entry.search_id !== id));
+    setSavedSearchMatches((current) => current.filter((entry) => entry.search_id !== id));
+  }
+
   async function saveSettings(values) {
     const nextPreferences = {
       start_view: values.start_view,
@@ -1149,16 +1333,24 @@ function App({ session }) {
       "materials",
       "monitored_studios",
       "monitored_professions",
+      "saved_searches",
+      "saved_search_professions",
+      "saved_search_sources",
+      "saved_search_matches",
       "activity_history",
     ];
+    const relationTables = new Set([
+      "saved_search_professions",
+      "saved_search_sources",
+      "saved_search_matches",
+    ]);
     const results = await Promise.all(
-      tableNames.map((table) =>
-        supabase
-          .from(table)
-          .select("*")
-          .eq("user_id", session.user.id)
-          .limit(10000),
-      ),
+      tableNames.map((table) => {
+        const request = supabase.from(table).select("*").limit(10000);
+        return relationTables.has(table)
+          ? request
+          : request.eq("user_id", session.user.id);
+      }),
     );
     const failed = results.find((result) => result.error);
     if (failed?.error) throw failed.error;
@@ -1167,7 +1359,7 @@ function App({ session }) {
     );
     const backup = {
       product: "GRIM Opportunity Hub",
-      schema_version: 1,
+      schema_version: 2,
       exported_at: new Date().toISOString(),
       account_email: session.user.email,
       note: "I file dello Storage non sono inclusi. Il backup contiene i loro riferimenti privati.",
@@ -1341,6 +1533,8 @@ function App({ session }) {
           ? "Fonti monitorate"
         : view === "professions"
           ? "Professioni monitorate"
+        : view === "searches"
+          ? "Ricerche salvate"
         : view === "history"
           ? "Storico"
         : view === "settings"
@@ -1371,6 +1565,7 @@ function App({ session }) {
               {item.id === "materials" && <small>{materials.length}</small>}
               {item.id === "studios" && <small>{studios.filter((entry) => entry.is_active).length}</small>}
               {item.id === "professions" && <small>{professions.filter((entry) => entry.is_active).length}</small>}
+              {item.id === "searches" && <small>{savedSearches.filter((entry) => entry.is_active).length}</small>}
             </button>
           ))}
         </nav>
@@ -1445,6 +1640,12 @@ function App({ session }) {
             <span>{professionError}</span>
           </div>
         )}
+        {savedSearchError && (
+          <div className="error personal-error" role="alert">
+            <strong>Ricerche salvate non disponibili</strong>
+            <span>{savedSearchError}</span>
+          </div>
+        )}
         {historyError && (
           <div className="error personal-error" role="alert">
             <strong>Storico non disponibile</strong>
@@ -1478,6 +1679,7 @@ function App({ session }) {
                   materials: materials.length,
                   studios: studios.length,
                   professions: professions.length,
+                  searches: savedSearches.length,
                   history: history.length,
                 }}
                 onSave={saveSettings}
@@ -1504,6 +1706,19 @@ function App({ session }) {
                 onCreate={createProfession}
                 onSave={saveProfession}
                 onDelete={deleteProfession}
+              />
+            ) : view === "searches" ? (
+              <SavedSearchesView
+                searches={savedSearches}
+                searchProfessions={savedSearchProfessions}
+                searchSources={savedSearchSources}
+                searchMatches={savedSearchMatches}
+                professions={professions}
+                studios={studios}
+                opportunityMap={opportunityMap}
+                onCreate={createSavedSearch}
+                onSave={saveSavedSearch}
+                onDelete={deleteSavedSearch}
               />
             ) : view === "materials" ? (
               <MaterialVault
@@ -2274,7 +2489,7 @@ function SettingsView({
           </div>
           <p>
             Scarica un file JSON con profilo, preferenze, candidature, materiali,
-            fonti, professioni e storico. I file caricati nello Storage non vengono duplicati.
+            fonti, professioni, ricerche salvate e storico. I file caricati nello Storage non vengono duplicati.
           </p>
           <div className="backup-counts">
             <span><b>{counts.personalStates}</b> opportunità gestite</span>
@@ -2282,6 +2497,7 @@ function SettingsView({
             <span><b>{counts.materials}</b> materiali</span>
             <span><b>{counts.studios}</b> fonti</span>
             <span><b>{counts.professions}</b> professioni</span>
+            <span><b>{counts.searches}</b> ricerche</span>
             <span><b>{counts.history}</b> eventi storici</span>
           </div>
           <div className="settings-actions">
@@ -2442,6 +2658,310 @@ function HistoryView({ entries, loading, opportunityMap }) {
         </div>
       )}
     </section>
+  );
+}
+
+function SavedSearchesView({
+  searches,
+  searchProfessions,
+  searchSources,
+  searchMatches,
+  professions,
+  studios,
+  opportunityMap,
+  onCreate,
+  onSave,
+  onDelete,
+}) {
+  const [creating, setCreating] = useState(false);
+
+  return (
+    <section className="saved-searches-section">
+      <div className="section-title studio-title">
+        <div>
+          <p className="eyebrow">RADAR MULTIPLO</p>
+          <h2>Ricerche indipendenti</h2>
+          <p>Ogni ricerca conserva ruoli, livelli, fonti e risultati separati.</p>
+        </div>
+        <strong>{searches.filter((entry) => entry.is_active).length} ATTIVE</strong>
+      </div>
+
+      <div className="search-intro">
+        <div>
+          <strong>Una sola scansione mattutina</strong>
+          <span>Aggiorna tutte le ricerche previste per quel giorno senza costi aggiuntivi.</span>
+        </div>
+        <button type="button" onClick={() => setCreating((value) => !value)}>
+          {creating ? "Chiudi" : "+ Nuova ricerca"}
+        </button>
+      </div>
+
+      {creating && (
+        <SearchEditor
+          initial={EMPTY_SAVED_SEARCH}
+          professions={professions}
+          studios={studios}
+          submitLabel="Salva nuova ricerca"
+          onSubmit={async (values) => {
+            await onCreate(values);
+            setCreating(false);
+          }}
+        />
+      )}
+
+      <div className="saved-search-list">
+        {searches.map((search) => (
+          <SavedSearchCard
+            key={search.id}
+            search={search}
+            professionLinks={searchProfessions.filter((entry) => entry.search_id === search.id)}
+            sourceLinks={searchSources.filter((entry) => entry.search_id === search.id)}
+            matches={searchMatches.filter((entry) => entry.search_id === search.id)}
+            professions={professions}
+            studios={studios}
+            opportunityMap={opportunityMap}
+            onSave={onSave}
+            onDelete={onDelete}
+          />
+        ))}
+        {!searches.length && (
+          <div className="studio-empty">
+            <strong>Nessuna ricerca salvata</strong>
+            <span>Crea il primo radar separato per professione o obiettivo.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SearchEditor({ initial, professions, studios, submitLabel, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    ...EMPTY_SAVED_SEARCH,
+    ...initial,
+    profession_levels: { ...(initial.profession_levels || {}) },
+    source_ids: [...(initial.source_ids || [])],
+    work_modes: [...(initial.work_modes || [])],
+    days_of_week: [...(initial.days_of_week || WEEK_DAYS.map(([day]) => day))],
+  }));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleArray(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: current[field].includes(value)
+        ? current[field].filter((entry) => entry !== value)
+        : [...current[field], value],
+    }));
+  }
+
+  function toggleProfession(profession) {
+    setForm((current) => {
+      const next = { ...current.profession_levels };
+      if (Object.hasOwn(next, profession.id)) delete next[profession.id];
+      else next[profession.id] = profession.seniority_level || "";
+      return { ...current, profession_levels: next };
+    });
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setMessage("");
+    if (!Object.keys(form.profession_levels).length) {
+      setMessage("Seleziona almeno una professione.");
+      return;
+    }
+    if (!form.days_of_week.length) {
+      setMessage("Seleziona almeno un giorno.");
+      return;
+    }
+    if (!form.use_all_sources && !form.source_ids.length) {
+      setMessage("Seleziona almeno una fonte oppure usa tutte le fonti.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onSubmit(form);
+    } catch (saveError) {
+      setMessage(
+        saveError?.code === "23505"
+          ? "Esiste già una ricerca con questo nome."
+          : "Salvataggio non riuscito.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="search-editor" onSubmit={handleSubmit}>
+      <div className="studio-form-grid">
+        <label><span>Nome della ricerca</span><input name="name" value={form.name} onChange={updateField} placeholder="Es. Matte Painter Senior" required maxLength="160" /></label>
+        <label><span>Priorità</span><select name="priority" value={form.priority} onChange={updateField}>{[5,4,3,2,1].map((value) => <option value={value} key={value}>{value}/5</option>)}</select></label>
+        <label className="wide"><span>Descrizione</span><input name="description" value={form.description} onChange={updateField} placeholder="Obiettivo e tipo di opportunità cercate" maxLength="1000" /></label>
+      </div>
+
+      <div className="search-editor-block">
+        <div className="search-editor-head"><strong>Professioni e seniority</strong><span>{Object.keys(form.profession_levels).length} selezionate</span></div>
+        <div className="search-role-groups">
+          {PROFESSION_CATEGORIES.map(([category, label]) => {
+            const entries = professions.filter((entry) => entry.category === category && entry.is_active);
+            if (!entries.length) return null;
+            return (
+              <details key={category} open={category === "direction_supervision" ? undefined : false}>
+                <summary>{label} <b>{entries.filter((entry) => Object.hasOwn(form.profession_levels, entry.id)).length}</b></summary>
+                <div className="search-role-list">
+                  {entries.map((profession) => {
+                    const selected = Object.hasOwn(form.profession_levels, profession.id);
+                    return (
+                      <div className={selected ? "selected" : ""} key={profession.id}>
+                        <label><input type="checkbox" checked={selected} onChange={() => toggleProfession(profession)} /><span>{profession.name}</span></label>
+                        {selected && !profession.is_direction && (
+                          <select
+                            value={form.profession_levels[profession.id]}
+                            disabled={profession.seniority_locked}
+                            onChange={(event) => setForm((current) => ({ ...current, profession_levels: { ...current.profession_levels, [profession.id]: event.target.value } }))}
+                            aria-label={`Seniority ${profession.name}`}
+                          >
+                            <option value="">Tutti i livelli</option>
+                            {SENIORITY_LEVELS.map(([value, seniority]) => <option value={value} key={value}>{seniority}</option>)}
+                          </select>
+                        )}
+                        {selected && profession.is_direction && <small>Fuori scala</small>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="search-editor-block">
+        <div className="search-editor-head"><strong>Fonti</strong><span>{form.use_all_sources ? "Tutte" : `${form.source_ids.length} selezionate`}</span></div>
+        <label className="search-switch"><input type="checkbox" checked={form.use_all_sources} onChange={(event) => setForm((current) => ({ ...current, use_all_sources: event.target.checked }))} /><span>Usa tutte le fonti attive, comprese quelle aggiunte in futuro</span></label>
+        {!form.use_all_sources && (
+          <div className="search-source-grid">
+            {studios.filter((entry) => entry.is_active).map((studio) => (
+              <label key={studio.id}><input type="checkbox" checked={form.source_ids.includes(studio.id)} onChange={() => toggleArray("source_ids", studio.id)} /><span>{studio.name}</span></label>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="search-editor-block">
+        <div className="search-editor-head"><strong>Giorni del monitoraggio</strong><span>Fascia 7:30–8:30</span></div>
+        <div className="search-day-picker">
+          {WEEK_DAYS.map(([day, label]) => <button type="button" className={form.days_of_week.includes(day) ? "active" : ""} onClick={() => toggleArray("days_of_week", day)} key={day}>{label}</button>)}
+        </div>
+      </div>
+
+      <div className="studio-form-grid search-filters">
+        <label><span>Località, separate da virgola</span><input name="locations" value={form.locations} onChange={updateField} placeholder="Milano, Londra, Europa" /></label>
+        <fieldset><legend>Modalità di lavoro</legend><div className="search-work-modes">{WORK_MODES.map(([value, label]) => <label key={value}><input type="checkbox" checked={form.work_modes.includes(value)} onChange={() => toggleArray("work_modes", value)} /><span>{label}</span></label>)}</div></fieldset>
+        <label><span>Parole da includere</span><textarea name="include_keywords" value={form.include_keywords} onChange={updateField} rows="3" placeholder="DMP, digital matte painting, environment" /></label>
+        <label><span>Parole da escludere</span><textarea name="exclude_keywords" value={form.exclude_keywords} onChange={updateField} rows="3" placeholder="internship, unpaid" /></label>
+      </div>
+
+      <div className="studio-create-actions">
+        <button type="submit" disabled={busy}>{busy ? "Salvataggio…" : submitLabel}</button>
+        {message && <span role="status">{message}</span>}
+      </div>
+    </form>
+  );
+}
+
+function SavedSearchCard({ search, professionLinks, sourceLinks, matches, professions, studios, opportunityMap, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const professionMap = Object.fromEntries(professions.map((entry) => [entry.id, entry]));
+  const sourceMap = Object.fromEntries(studios.map((entry) => [entry.id, entry]));
+  const initial = {
+    name: search.name,
+    description: search.description || "",
+    profession_levels: Object.fromEntries(professionLinks.map((entry) => [entry.profession_id, entry.seniority_level || ""])),
+    include_keywords: (search.include_keywords || []).join(", "),
+    exclude_keywords: (search.exclude_keywords || []).join(", "),
+    locations: (search.locations || []).join(", "),
+    work_modes: search.work_modes || [],
+    days_of_week: search.days_of_week || WEEK_DAYS.map(([day]) => day),
+    use_all_sources: search.use_all_sources,
+    source_ids: sourceLinks.map((entry) => entry.source_id),
+    priority: search.priority,
+    is_active: search.is_active,
+  };
+  const currentMatches = matches.filter((entry) => entry.is_current);
+
+  async function toggleActive() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(search.id, { ...initial, is_active: !search.is_active });
+    } catch {
+      setMessage("Aggiornamento non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm("Eliminare questa ricerca e le sue associazioni?")) return;
+    setBusy(true);
+    try { await onDelete(search.id); }
+    catch { setMessage("Eliminazione non riuscita."); setBusy(false); }
+  }
+
+  return (
+    <article className={`saved-search-card ${search.is_active ? "" : "archived"}`}>
+      <div className="saved-search-summary">
+        <div className="search-priority"><b>{search.priority}</b><span>PRIORITÀ</span></div>
+        <div>
+          <span className="search-state">{search.is_active ? "ATTIVA" : "SOSPESA"}</span>
+          <h3>{search.name}</h3>
+          <p>{search.description || "Ricerca professionale personalizzata"}</p>
+          <div className="search-chip-row">
+            {professionLinks.slice(0, 5).map((link) => <span key={link.profession_id}>{professionMap[link.profession_id]?.name || "Professione"}</span>)}
+            {professionLinks.length > 5 && <span>+{professionLinks.length - 5}</span>}
+          </div>
+        </div>
+        <div className="search-stats">
+          <strong>{currentMatches.length}</strong><span>RISULTATI ATTUALI</span>
+          <small>{search.last_checked_at ? `Aggiornata ${formatDate(search.last_checked_at)}` : "Prima scansione in attesa"}</small>
+        </div>
+      </div>
+      <div className="search-meta">
+        <span>{(search.days_of_week || []).map((day) => WEEK_DAYS.find(([value]) => value === day)?.[1]).join(" · ")}</span>
+        <span>{search.use_all_sources ? "Tutte le fonti attive" : sourceLinks.map((link) => sourceMap[link.source_id]?.name).filter(Boolean).join(", ")}</span>
+        {!!search.locations?.length && <span>{search.locations.join(", ")}</span>}
+      </div>
+      <div className="profession-actions">
+        <button type="button" onClick={() => setOpen((value) => !value)}>{open ? "Chiudi risultati" : "Apri risultati"}</button>
+        <button type="button" onClick={() => setEditing((value) => !value)}>{editing ? "Chiudi modifica" : "Modifica"}</button>
+        <button type="button" onClick={toggleActive} disabled={busy}>{search.is_active ? "Sospendi" : "Riattiva"}</button>
+        <button type="button" className="delete-studio" onClick={remove} disabled={busy}>Elimina</button>
+      </div>
+      {message && <span className="studio-message profession-message" role="status">{message}</span>}
+      {editing && <SearchEditor initial={initial} professions={professions} studios={studios} submitLabel="Salva modifiche" onSubmit={async (values) => { await onSave(search.id, values); setEditing(false); }} />}
+      {open && (
+        <div className="search-results">
+          {!currentMatches.length ? <div className="search-results-empty">Nessun risultato associato. La prima scansione userà questa configurazione.</div> : currentMatches.map((match) => {
+            const item = opportunityMap[match.opportunity_id];
+            if (!item) return null;
+            const url = safeExternalUrl(item.url || item.sourceUrl || item.link);
+            return <article key={match.opportunity_id}><div><span>{AREAS[item.area]?.label || item.area}</span><h4>{item.title}</h4><p>{item.org} · {item.location || "Località non indicata"}</p></div>{url && <a href={url} target="_blank" rel="noreferrer">Apri ↗</a>}</article>;
+          })}
+        </div>
+      )}
+    </article>
   );
 }
 
