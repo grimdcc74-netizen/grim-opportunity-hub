@@ -2882,7 +2882,7 @@ function SearchEditor({ initial, professions, studios, submitLabel, onSubmit }) 
       </details>
 
       <details className="collapsible-panel search-editor-section">
-        <summary><strong>Fonti</strong><span>{form.use_all_sources ? "Tutte" : `${form.source_ids.length} selezionate`}</span></summary>
+        <summary><strong>Fonti</strong><span>{form.use_all_sources ? "Tutte le fonti attive" : `${form.source_ids.length} selezionate`}</span></summary>
         <div className="collapsible-content">
           <label className="search-switch"><input type="checkbox" checked={form.use_all_sources} onChange={(event) => setForm((current) => ({ ...current, use_all_sources: event.target.checked }))} /><span>Usa tutte le fonti attive, comprese quelle aggiunte in futuro</span></label>
           {!form.use_all_sources && (
@@ -2896,9 +2896,23 @@ function SearchEditor({ initial, professions, studios, submitLabel, onSubmit }) 
       </details>
 
       <details className="collapsible-panel search-editor-section">
-        <summary><strong>Giorni del monitoraggio</strong><span>Fascia 7:30-8:30</span></summary>
-        <div className="collapsible-content search-day-picker">
-          {WEEK_DAYS.map(([day, label]) => <button type="button" className={form.days_of_week.includes(day) ? "active" : ""} onClick={() => toggleArray("days_of_week", day)} key={day}>{label}</button>)}
+        <summary><strong>Giorni del monitoraggio</strong><span>{form.days_of_week.length === 7 ? "Tutti i giorni" : `${form.days_of_week.length} giorni`} · 7:30-8:30</span></summary>
+        <div className="collapsible-content search-day-settings">
+          <div className="search-day-shortcuts" aria-label="Selezioni rapide dei giorni">
+            <button type="button" onClick={() => setForm((current) => ({ ...current, days_of_week: WEEK_DAYS.map(([day]) => day) }))}>Tutti</button>
+            <button type="button" onClick={() => setForm((current) => ({ ...current, days_of_week: [1, 2, 3, 4, 5] }))}>Lun-Ven</button>
+          </div>
+          <div className="search-day-picker">
+            {WEEK_DAYS.map(([day, label]) => {
+              const selected = form.days_of_week.includes(day);
+              return (
+                <label className={selected ? "active" : ""} key={day}>
+                  <input type="checkbox" checked={selected} onChange={() => toggleArray("days_of_week", day)} />
+                  <span>{label}</span>
+                </label>
+              );
+            })}
+          </div>
         </div>
       </details>
 

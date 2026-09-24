@@ -2452,24 +2452,56 @@ select:focus {
   border: 1px solid var(--line);
   background: #101419;
 }
+.search-day-settings {
+  display: grid;
+  gap: 10px;
+}
+.search-day-shortcuts,
 .search-day-picker {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
 }
-.search-day-picker button {
+.search-day-shortcuts button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #35404a;
+  color: #b7c0c7;
+  background: transparent;
+  font-size: 0.62rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.search-day-shortcuts button:hover,
+.search-day-shortcuts button:focus-visible {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.search-day-picker label {
   min-width: 48px;
   min-height: 40px;
+  padding: 0 11px;
   border: 1px solid #35404a;
   color: #9ca7af;
   background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 0.68rem;
   cursor: pointer;
 }
-.search-day-picker button.active {
+.search-day-picker label.active {
   border-color: var(--lime);
   color: #090b0d;
   background: var(--lime);
   font-weight: 900;
+}
+.search-day-picker input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #090b0d;
 }
 .search-filters {
   margin-top: 20px;
