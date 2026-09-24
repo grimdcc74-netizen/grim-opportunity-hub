@@ -150,6 +150,15 @@ const SENIORITY_LEVELS = [
   [6, "Head of Department"],
 ];
 
+const SENIORITY_DESCRIPTIONS = {
+  1: "Ingresso nella disciplina",
+  2: "Autonomia operativa",
+  3: "Shot e compiti complessi",
+  4: "Coordina un piccolo team",
+  5: "Supervisiona la disciplina",
+  6: "Guida il dipartimento",
+};
+
 const EMPTY_PROFESSION = {
   name: "",
   category: "assets_surfacing",
@@ -1774,24 +1783,27 @@ function App({ session }) {
                   setSort,
                 }}
               />
-              <div className="opportunity-list">
-                {filtered.slice(0, view === "today" ? 12 : 100).map((item) => (
-                  <OpportunityCard
-                    key={item.id}
-                    item={item}
-                    personalState={personalStates[item.id]}
-                    application={applicationMap[item.id]}
-                    onSave={savePersonalState}
-                    onDelete={deletePersonalState}
-                    onSaveApplication={saveApplication}
-                  />
-                ))}
-                {!filtered.length && (
-                  <div className="empty">
-                    Nessuna opportunità corrisponde ai filtri selezionati.
-                  </div>
-                )}
-              </div>
+              <details className="collapsible-panel list-panel" open>
+                <summary><strong>Elenco opportunità</strong><span>{filtered.length} risultati</span></summary>
+                <div className="opportunity-list collapsible-content">
+                  {filtered.slice(0, view === "today" ? 12 : 100).map((item) => (
+                    <OpportunityCard
+                      key={item.id}
+                      item={item}
+                      personalState={personalStates[item.id]}
+                      application={applicationMap[item.id]}
+                      onSave={savePersonalState}
+                      onDelete={deletePersonalState}
+                      onSaveApplication={saveApplication}
+                    />
+                  ))}
+                  {!filtered.length && (
+                    <div className="empty">
+                      Nessuna opportunità corrisponde ai filtri selezionati.
+                    </div>
+                  )}
+                </div>
+              </details>
                 </section>
               </>
             )}
@@ -2627,11 +2639,11 @@ function HistoryView({ entries, loading, opportunityMap }) {
       ) : (
         <div className="history-groups">
           {Object.entries(grouped).map(([key, dayEntries]) => (
-            <section className="history-day" key={key}>
-              <header>
+            <details className="history-day" key={key}>
+              <summary>
                 <h3>{dayLabel(key)}</h3>
                 <span>{dayEntries.length}</span>
-              </header>
+              </summary>
               <div className="history-list">
                 {dayEntries.map((entry) => {
                   const subject =
@@ -2653,7 +2665,7 @@ function HistoryView({ entries, loading, opportunityMap }) {
                   );
                 })}
               </div>
-            </section>
+            </details>
           ))}
         </div>
       )}
@@ -2709,7 +2721,9 @@ function SavedSearchesView({
         />
       )}
 
-      <div className="saved-search-list">
+      <details className="collapsible-panel list-panel" open>
+        <summary><strong>Ricerche salvate</strong><span>{searches.length}</span></summary>
+        <div className="saved-search-list collapsible-content">
         {searches.map((search) => (
           <SavedSearchCard
             key={search.id}
@@ -2730,7 +2744,8 @@ function SavedSearchesView({
             <span>Crea il primo radar separato per professione o obiettivo.</span>
           </div>
         )}
-      </div>
+        </div>
+      </details>
     </section>
   );
 }
@@ -2801,20 +2816,25 @@ function SearchEditor({ initial, professions, studios, submitLabel, onSubmit }) 
 
   return (
     <form className="search-editor" onSubmit={handleSubmit}>
-      <div className="studio-form-grid">
-        <label><span>Nome della ricerca</span><input name="name" value={form.name} onChange={updateField} placeholder="Es. Matte Painter Senior" required maxLength="160" /></label>
-        <label><span>Priorità</span><select name="priority" value={form.priority} onChange={updateField}>{[5,4,3,2,1].map((value) => <option value={value} key={value}>{value}/5</option>)}</select></label>
-        <label className="wide"><span>Descrizione</span><input name="description" value={form.description} onChange={updateField} placeholder="Obiettivo e tipo di opportunità cercate" maxLength="1000" /></label>
-      </div>
+      <details className="collapsible-panel search-editor-section" open>
+        <summary><strong>Dati della ricerca</strong><span>Nome, priorità e descrizione</span></summary>
+        <div className="collapsible-content studio-form-grid">
+          <label><span>Nome della ricerca</span><input name="name" value={form.name} onChange={updateField} placeholder="Es. Matte Painter Senior" required maxLength="160" /></label>
+          <label><span>Priorità</span><select name="priority" value={form.priority} onChange={updateField}>{[5,4,3,2,1].map((value) => <option value={value} key={value}>{value}/5</option>)}</select></label>
+          <label className="wide"><span>Descrizione</span><input name="description" value={form.description} onChange={updateField} placeholder="Obiettivo e tipo di opportunità cercate" maxLength="1000" /></label>
+        </div>
+      </details>
 
-      <div className="search-editor-block">
-        <div className="search-editor-head"><strong>Professioni e seniority</strong><span>{Object.keys(form.profession_levels).length} selezionate</span></div>
-        <div className="search-role-groups">
+      <details className="collapsible-panel search-editor-section">
+        <summary><strong>Professioni e seniority</strong><span>{Object.keys(form.profession_levels).length} selezionate</span></summary>
+        <div className="collapsible-content">
+          <SeniorityLegend />
+          <div className="search-role-groups">
           {PROFESSION_CATEGORIES.map(([category, label]) => {
             const entries = professions.filter((entry) => entry.category === category && entry.is_active);
             if (!entries.length) return null;
             return (
-              <details key={category} open={category === "direction_supervision" ? undefined : false}>
+              <details key={category}>
                 <summary>{label} <b>{entries.filter((entry) => Object.hasOwn(form.profession_levels, entry.id)).length}</b></summary>
                 <div className="search-role-list">
                   {entries.map((profession) => {
@@ -2822,18 +2842,16 @@ function SearchEditor({ initial, professions, studios, submitLabel, onSubmit }) 
                     return (
                       <div className={selected ? "selected" : ""} key={profession.id}>
                         <label><input type="checkbox" checked={selected} onChange={() => toggleProfession(profession)} /><span>{profession.name}</span></label>
-                        {selected && !profession.is_direction && (
+                        {selected && (
                           <select
                             value={form.profession_levels[profession.id]}
-                            disabled={profession.seniority_locked}
                             onChange={(event) => setForm((current) => ({ ...current, profession_levels: { ...current.profession_levels, [profession.id]: event.target.value } }))}
                             aria-label={`Seniority ${profession.name}`}
                           >
-                            <option value="">Tutti i livelli</option>
+                            <option value="">Nessun livello specifico</option>
                             {SENIORITY_LEVELS.map(([value, seniority]) => <option value={value} key={value}>{seniority}</option>)}
                           </select>
                         )}
-                        {selected && profession.is_direction && <small>Fuori scala</small>}
                       </div>
                     );
                   })}
@@ -2841,40 +2859,65 @@ function SearchEditor({ initial, professions, studios, submitLabel, onSubmit }) 
               </details>
             );
           })}
-        </div>
-      </div>
-
-      <div className="search-editor-block">
-        <div className="search-editor-head"><strong>Fonti</strong><span>{form.use_all_sources ? "Tutte" : `${form.source_ids.length} selezionate`}</span></div>
-        <label className="search-switch"><input type="checkbox" checked={form.use_all_sources} onChange={(event) => setForm((current) => ({ ...current, use_all_sources: event.target.checked }))} /><span>Usa tutte le fonti attive, comprese quelle aggiunte in futuro</span></label>
-        {!form.use_all_sources && (
-          <div className="search-source-grid">
-            {studios.filter((entry) => entry.is_active).map((studio) => (
-              <label key={studio.id}><input type="checkbox" checked={form.source_ids.includes(studio.id)} onChange={() => toggleArray("source_ids", studio.id)} /><span>{studio.name}</span></label>
-            ))}
           </div>
-        )}
-      </div>
+        </div>
+      </details>
 
-      <div className="search-editor-block">
-        <div className="search-editor-head"><strong>Giorni del monitoraggio</strong><span>Fascia 7:30–8:30</span></div>
-        <div className="search-day-picker">
+      <details className="collapsible-panel search-editor-section">
+        <summary><strong>Fonti</strong><span>{form.use_all_sources ? "Tutte" : `${form.source_ids.length} selezionate`}</span></summary>
+        <div className="collapsible-content">
+          <label className="search-switch"><input type="checkbox" checked={form.use_all_sources} onChange={(event) => setForm((current) => ({ ...current, use_all_sources: event.target.checked }))} /><span>Usa tutte le fonti attive, comprese quelle aggiunte in futuro</span></label>
+          {!form.use_all_sources && (
+            <div className="search-source-grid">
+              {studios.filter((entry) => entry.is_active).map((studio) => (
+                <label key={studio.id}><input type="checkbox" checked={form.source_ids.includes(studio.id)} onChange={() => toggleArray("source_ids", studio.id)} /><span>{studio.name}</span></label>
+              ))}
+            </div>
+          )}
+        </div>
+      </details>
+
+      <details className="collapsible-panel search-editor-section">
+        <summary><strong>Giorni del monitoraggio</strong><span>Fascia 7:30-8:30</span></summary>
+        <div className="collapsible-content search-day-picker">
           {WEEK_DAYS.map(([day, label]) => <button type="button" className={form.days_of_week.includes(day) ? "active" : ""} onClick={() => toggleArray("days_of_week", day)} key={day}>{label}</button>)}
         </div>
-      </div>
+      </details>
 
-      <div className="studio-form-grid search-filters">
-        <label><span>Località, separate da virgola</span><input name="locations" value={form.locations} onChange={updateField} placeholder="Milano, Londra, Europa" /></label>
-        <fieldset><legend>Modalità di lavoro</legend><div className="search-work-modes">{WORK_MODES.map(([value, label]) => <label key={value}><input type="checkbox" checked={form.work_modes.includes(value)} onChange={() => toggleArray("work_modes", value)} /><span>{label}</span></label>)}</div></fieldset>
-        <label><span>Parole da includere</span><textarea name="include_keywords" value={form.include_keywords} onChange={updateField} rows="3" placeholder="DMP, digital matte painting, environment" /></label>
-        <label><span>Parole da escludere</span><textarea name="exclude_keywords" value={form.exclude_keywords} onChange={updateField} rows="3" placeholder="internship, unpaid" /></label>
-      </div>
+      <details className="collapsible-panel search-editor-section">
+        <summary><strong>Filtri aggiuntivi</strong><span>Località, modalità e parole chiave</span></summary>
+        <div className="collapsible-content studio-form-grid search-filters">
+          <label><span>Località, separate da virgola</span><input name="locations" value={form.locations} onChange={updateField} placeholder="Milano, Londra, Europa" /></label>
+          <fieldset><legend>Modalità di lavoro</legend><div className="search-work-modes">{WORK_MODES.map(([value, label]) => <label key={value}><input type="checkbox" checked={form.work_modes.includes(value)} onChange={() => toggleArray("work_modes", value)} /><span>{label}</span></label>)}</div></fieldset>
+          <label><span>Parole da includere</span><textarea name="include_keywords" value={form.include_keywords} onChange={updateField} rows="3" placeholder="DMP, digital matte painting, environment" /></label>
+          <label><span>Parole da escludere</span><textarea name="exclude_keywords" value={form.exclude_keywords} onChange={updateField} rows="3" placeholder="internship, unpaid" /></label>
+        </div>
+      </details>
 
       <div className="studio-create-actions">
         <button type="submit" disabled={busy}>{busy ? "Salvataggio…" : submitLabel}</button>
         {message && <span role="status">{message}</span>}
       </div>
     </form>
+  );
+}
+
+function SeniorityLegend() {
+  return (
+    <details className="seniority-legend">
+      <summary>Legenda seniority <span>Come leggere e impostare i pallini</span></summary>
+      <div className="seniority-legend-grid">
+        <div><span className="legend-dots empty" aria-hidden="true"><i /><i /><i /><i /><i /><i /></span><strong>0 · Da definire</strong><small>Nessun livello selezionato</small></div>
+        {SENIORITY_LEVELS.map(([level, label]) => (
+          <div key={level}>
+            <span className="legend-dots" aria-hidden="true">{SENIORITY_LEVELS.map(([dot]) => <i className={dot <= level ? "filled" : ""} key={dot} />)}</span>
+            <strong>{level} · {label}</strong>
+            <small>{SENIORITY_DESCRIPTIONS[level]}</small>
+          </div>
+        ))}
+      </div>
+      <p>Puoi azzerare e ricalibrare qualsiasi ruolo. Il titolo della professione non blocca più il livello scelto.</p>
+    </details>
   );
 }
 
@@ -3034,15 +3077,17 @@ function ProfessionsVault({ professions, onCreate, onSave, onDelete }) {
         <strong>{activeCount} ATTIVE</strong>
       </div>
 
-      <form className="studio-create profession-create" onSubmit={handleSubmit}>
-        <div className="studio-create-head">
+      <details className="collapsible-panel create-panel profession-create">
+        <summary><strong>Aggiungi un altro ruolo</strong><span>Modulo professione aggiuntiva</span></summary>
+        <form className="studio-create collapsible-content" onSubmit={handleSubmit}>
+          <div className="studio-create-head">
           <div>
             <p className="eyebrow">PROFESSIONE AGGIUNTIVA</p>
             <h3>Aggiungi un altro ruolo</h3>
           </div>
           <small>Runner e Trainee non entrano nella scala</small>
-        </div>
-        <div className="studio-form-grid">
+          </div>
+          <div className="studio-form-grid">
           <label>
             <span>Nome della professione</span>
             <input
@@ -3085,14 +3130,17 @@ function ProfessionsVault({ professions, onCreate, onSave, onDelete }) {
               maxLength="1000"
             />
           </label>
-        </div>
-        <div className="studio-create-actions">
-          <button type="submit" disabled={busy}>
-            {busy ? "Salvataggio…" : "Aggiungi professione"}
-          </button>
-          {message && <span role="status">{message}</span>}
-        </div>
-      </form>
+          </div>
+          <div className="studio-create-actions">
+            <button type="submit" disabled={busy}>
+              {busy ? "Salvataggio…" : "Aggiungi professione"}
+            </button>
+            {message && <span role="status">{message}</span>}
+          </div>
+        </form>
+      </details>
+
+      <SeniorityLegend />
 
       <div className="studio-toolbar">
         <div className="studio-tabs" role="tablist" aria-label="Filtra professioni monitorate">
@@ -3114,11 +3162,11 @@ function ProfessionsVault({ professions, onCreate, onSave, onDelete }) {
           const entries = visible.filter((entry) => entry.category === category);
           if (!entries.length) return null;
           return (
-            <section className="profession-group" key={category}>
-              <header>
+            <details className="profession-group" key={category} open={needle ? true : undefined}>
+              <summary>
                 <h3>{label}</h3>
                 <span>{entries.length}</span>
-              </header>
+              </summary>
               <div className="profession-list">
                 {entries.map((profession) => (
                   <ProfessionCard
@@ -3129,7 +3177,7 @@ function ProfessionsVault({ professions, onCreate, onSave, onDelete }) {
                   />
                 ))}
               </div>
-            </section>
+            </details>
           );
         })}
         {!visible.length && (
@@ -3197,30 +3245,24 @@ function ProfessionCard({ profession, onSave, onDelete }) {
         </div>
         <div className="seniority-block">
           <span>SENIORITY</span>
-          {profession.is_direction ? (
-            <strong>Direzione · fuori scala</strong>
-          ) : (
-            <>
-              <div className="seniority-dots" aria-label={`Livello ${currentLabel}`}>
-                {SENIORITY_LEVELS.map(([level, label]) => (
-                  <button
-                    type="button"
-                    key={level}
-                    className={level <= currentLevel ? "filled" : ""}
-                    aria-label={label}
-                    title={label}
-                    disabled={busy || profession.seniority_locked}
-                    onClick={() => save({ seniority_level: level })}
-                  />
-                ))}
-              </div>
-              <strong>{currentLabel}</strong>
-            </>
-          )}
+          <div className="seniority-dots" aria-label={`Livello ${currentLabel}`}>
+            {SENIORITY_LEVELS.map(([level, label]) => (
+              <button
+                type="button"
+                key={level}
+                className={level <= currentLevel ? "filled" : ""}
+                aria-label={`${profession.name}: ${label}`}
+                title={label}
+                disabled={busy}
+                onClick={() => save({ seniority_level: level })}
+              />
+            ))}
+          </div>
+          <strong>{currentLabel}{profession.is_direction ? " · livello personale facoltativo" : ""}</strong>
         </div>
       </div>
       <div className="profession-actions">
-        {!profession.is_direction && !profession.seniority_locked && currentLevel > 0 && (
+        {currentLevel > 0 && (
           <button type="button" onClick={() => save({ seniority_level: "" })} disabled={busy}>Azzera livello</button>
         )}
         <button type="button" onClick={() => save({ is_active: !profession.is_active })} disabled={busy}>
@@ -3319,15 +3361,17 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
         <strong>{activeCount} ATTIVI</strong>
       </div>
 
-      <form className="studio-create" onSubmit={handleSubmit}>
-        <div className="studio-create-head">
+      <details className="collapsible-panel create-panel">
+        <summary><strong>Aggiungi sito o fonte</strong><span>Nuovo monitoraggio</span></summary>
+        <form className="studio-create collapsible-content" onSubmit={handleSubmit}>
+          <div className="studio-create-head">
           <div>
             <p className="eyebrow">NUOVO MONITORAGGIO</p>
             <h3>Aggiungi sito o fonte</h3>
           </div>
           <small>Privato · collegato al radar delle 7:30</small>
-        </div>
-        <div className="studio-form-grid">
+          </div>
+          <div className="studio-form-grid">
           <label>
             <span>Nome del sito o della fonte</span>
             <input
@@ -3393,14 +3437,15 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
               placeholder="Pagina careers, tipo di opportunità, indicazioni utili per la ricerca…"
             />
           </label>
-        </div>
-        <div className="studio-create-actions">
-          <button type="submit" disabled={busy}>
-            {busy ? "Salvataggio…" : "Aggiungi fonte"}
-          </button>
-          {message && <span role="status">{message}</span>}
-        </div>
-      </form>
+          </div>
+          <div className="studio-create-actions">
+            <button type="submit" disabled={busy}>
+              {busy ? "Salvataggio…" : "Aggiungi fonte"}
+            </button>
+            {message && <span role="status">{message}</span>}
+          </div>
+        </form>
+      </details>
 
       <div className="studio-toolbar">
       <div className="studio-tabs" role="tablist" aria-label="Filtra fonti monitorate">
@@ -3417,7 +3462,9 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
         />
       </div>
 
-      <div className="studio-list">
+      <details className="collapsible-panel list-panel" open>
+        <summary><strong>Fonti monitorate</strong><span>{visible.length}</span></summary>
+        <div className="studio-list collapsible-content">
         {visible.map((studio) => (
           <StudioCard
             key={studio.id}
@@ -3433,7 +3480,8 @@ function StudiosVault({ studios, onCreate, onSave, onMarkChecked, onDelete }) {
             <span>Aggiungi il primo sito da monitorare con il modulo qui sopra.</span>
           </div>
         )}
-      </div>
+        </div>
+      </details>
     </section>
   );
 }
@@ -3655,15 +3703,17 @@ function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
         <strong>{materials.length} MATERIALI</strong>
       </div>
 
-      <form className="material-create" onSubmit={handleSubmit}>
-        <div className="material-create-head">
+      <details className="collapsible-panel create-panel">
+        <summary><strong>Carica file o collega risorsa</strong><span>Nuovo materiale</span></summary>
+        <form className="material-create collapsible-content" onSubmit={handleSubmit}>
+          <div className="material-create-head">
           <div>
             <p className="eyebrow">NUOVO MATERIALE</p>
             <h3>Carica file o collega risorsa</h3>
           </div>
           <small>Privato · massimo 25 MB per file</small>
-        </div>
-        <div className="material-form-grid">
+          </div>
+          <div className="material-form-grid">
           <label>
             <span>Nome</span>
             <input
@@ -3733,14 +3783,15 @@ function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
               placeholder="Contenuto, destinazione, aggiornamenti da fare…"
             />
           </label>
-        </div>
-        <div className="material-create-actions">
-          <button type="submit" disabled={busy}>
-            {busy ? "Caricamento…" : "Aggiungi materiale"}
-          </button>
-          {message && <span role="status">{message}</span>}
-        </div>
-      </form>
+          </div>
+          <div className="material-create-actions">
+            <button type="submit" disabled={busy}>
+              {busy ? "Caricamento…" : "Aggiungi materiale"}
+            </button>
+            {message && <span role="status">{message}</span>}
+          </div>
+        </form>
+      </details>
 
       <div className="material-tabs" role="tablist" aria-label="Filtra materiali">
         <button
@@ -3766,7 +3817,9 @@ function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
         ))}
       </div>
 
-      <div className="material-list">
+      <details className="collapsible-panel list-panel" open>
+        <summary><strong>Materiali</strong><span>{visible.length}</span></summary>
+        <div className="material-list collapsible-content">
         {visible.map((material) => (
           <MaterialCard
             key={material.id}
@@ -3782,7 +3835,8 @@ function MaterialVault({ materials, onCreate, onSave, onDelete, onDownload }) {
             <span>Usa il modulo qui sopra per aggiungere il primo.</span>
           </div>
         )}
-      </div>
+        </div>
+      </details>
     </section>
   );
 }
@@ -3982,11 +4036,11 @@ function ApplicationsBoard({
             column.statuses.includes(entry.status),
           );
           return (
-            <section className="application-column" key={column.id}>
-              <header>
+            <details className="application-column" key={column.id}>
+              <summary>
                 <h3>{column.label}</h3>
                 <span>{entries.length}</span>
-              </header>
+              </summary>
               <div className="application-stack">
                 {entries.map((entry) => (
                   <ApplicationCard
@@ -3999,7 +4053,7 @@ function ApplicationsBoard({
                 ))}
                 {!entries.length && <p>Nessuna candidatura</p>}
               </div>
-            </section>
+            </details>
           );
         })}
       </div>

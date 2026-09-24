@@ -880,25 +880,43 @@ select:focus {
   overflow-x: auto;
 }
 .application-column {
-  min-height: 460px;
   border: 1px solid var(--line);
   background: #0d1014;
 }
-.application-column > header {
+.application-column[open] {
+  min-height: 460px;
+}
+.application-column > summary {
   min-height: 55px;
-  padding: 0 14px;
+  padding: 0 38px 0 14px;
   border-bottom: 1px solid var(--line);
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
 }
-.application-column > header h3 {
+.application-column > summary::-webkit-details-marker {
+  display: none;
+}
+.application-column > summary::after {
+  content: "+";
+  position: absolute;
+  right: 12px;
+  color: var(--lime);
+  font-size: 1rem;
+}
+.application-column[open] > summary::after {
+  content: "−";
+}
+.application-column > summary h3 {
   margin: 0;
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.application-column > header span {
+.application-column > summary span {
   min-width: 25px;
   padding: 4px 6px;
   color: #0b0d10;
@@ -2070,31 +2088,136 @@ select:focus {
 .profession-create {
   margin-bottom: 20px;
 }
-.profession-groups {
-  display: grid;
-  gap: 22px;
+.collapsible-panel {
+  border: 1px solid var(--line);
+  background: #101419;
 }
-.profession-group {
-  border-top: 1px solid #303943;
-}
-.profession-group > header {
-  min-height: 56px;
-  padding: 12px 2px;
+.collapsible-panel > summary,
+.profession-group > summary,
+.seniority-legend > summary {
+  min-height: 52px;
+  padding: 12px 44px 12px 15px;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  color: #d7dde2;
+  cursor: pointer;
+  list-style: none;
 }
-.profession-group > header h3 {
+.collapsible-panel > summary::-webkit-details-marker,
+.profession-group > summary::-webkit-details-marker,
+.seniority-legend > summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible-panel > summary::after,
+.profession-group > summary::after,
+.seniority-legend > summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  border-right: 2px solid var(--lime);
+  border-bottom: 2px solid var(--lime);
+  transform: translateY(-65%) rotate(45deg);
+  transition: transform 160ms ease;
+}
+.collapsible-panel[open] > summary::after,
+.profession-group[open] > summary::after,
+.seniority-legend[open] > summary::after {
+  transform: translateY(-35%) rotate(225deg);
+}
+.collapsible-panel > summary span,
+.seniority-legend > summary span {
+  color: #7f8a94;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+.collapsible-content {
+  padding: 0 15px 16px;
+}
+.create-panel {
+  margin-bottom: 20px;
+}
+.create-panel .studio-create,
+.create-panel .material-create {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: #0d1115;
+}
+.seniority-legend {
+  margin: 0 0 18px;
+  border: 1px solid #35404a;
+  background: #0c1014;
+}
+.seniority-legend-grid {
+  padding: 0 15px 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.seniority-legend-grid > div {
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid #29323a;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+.seniority-legend-grid strong,
+.seniority-legend-grid small {
+  color: #c7ced4;
+  font-size: 0.64rem;
+}
+.seniority-legend-grid small {
+  color: #75818b;
+}
+.legend-dots {
+  display: flex;
+  gap: 4px;
+}
+.legend-dots i {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--lime);
+  border-radius: 50%;
+}
+.legend-dots i.filled {
+  background: var(--lime);
+}
+.seniority-legend > p {
+  margin: 0;
+  padding: 0 15px 15px;
+  color: #87929c;
+  font-size: 0.68rem;
+}
+.profession-groups {
+  display: grid;
+  gap: 8px;
+}
+.profession-group {
+  border: 1px solid #303943;
+  background: #0c1014;
+}
+.profession-group > summary {
+  min-height: 56px;
+  padding-left: 14px;
+}
+.profession-group > summary h3 {
   margin: 0;
   font-size: 1rem;
 }
-.profession-group > header span {
+.profession-group > summary span {
   color: var(--lime);
   font-size: 0.68rem;
   font-weight: 900;
 }
 .profession-list {
+  padding: 0 8px 8px;
   display: grid;
   gap: 7px;
 }
@@ -2225,21 +2348,11 @@ select:focus {
   border: 1px solid #3a444e;
   background: #0d1115;
 }
-.search-editor-block {
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+.search-editor-section + .search-editor-section {
+  margin-top: 8px;
 }
-.search-editor-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-.search-editor-head span {
+.search-editor-section > summary span {
   color: var(--lime);
-  font-size: 0.68rem;
-  font-weight: 850;
 }
 .search-role-groups {
   display: grid;
@@ -2660,25 +2773,42 @@ select:focus {
   gap: 22px;
 }
 .history-day {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 18px;
+  border-top: 1px solid var(--line);
 }
-.history-day > header {
-  padding-top: 17px;
-  border-top: 2px solid var(--lime);
+.history-day > summary {
+  min-height: 54px;
+  padding: 12px 42px 12px 14px;
+  border-left: 3px solid var(--lime);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
 }
-.history-day > header h3 {
+.history-day > summary::-webkit-details-marker {
+  display: none;
+}
+.history-day > summary::after {
+  content: "+";
+  position: absolute;
+  right: 15px;
+  color: var(--lime);
+}
+.history-day[open] > summary::after {
+  content: "−";
+}
+.history-day > summary h3 {
   margin: 0;
   font-size: 0.9rem;
 }
-.history-day > header span {
+.history-day > summary span {
   display: inline-block;
-  margin-top: 5px;
   color: #64707a;
   font-size: 0.65rem;
 }
 .history-list {
+  padding: 0 14px;
   border-top: 1px solid var(--line);
 }
 .history-entry {
@@ -2794,6 +2924,9 @@ select:focus {
   .search-role-groups {
     grid-template-columns: 1fr;
   }
+  .seniority-legend-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .search-source-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2846,6 +2979,14 @@ select:focus {
   .search-role-list > div { grid-template-columns: 1fr; }
   .search-role-list small { text-align: left; }
   .search-source-grid { grid-template-columns: 1fr; }
+  .seniority-legend-grid { grid-template-columns: 1fr; }
+  .collapsible-panel > summary,
+  .profession-group > summary,
+  .seniority-legend > summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
   .saved-search-summary { grid-template-columns: 1fr; }
   .search-priority { width: 64px; min-height: 64px; }
   .search-meta { margin-left: 0; }
