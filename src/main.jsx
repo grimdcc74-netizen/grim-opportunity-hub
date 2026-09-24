@@ -1769,20 +1769,25 @@ function App({ session }) {
                 </div>
                 <strong>{filtered.length} RISULTATI</strong>
               </div>
-              <Filters
-                {...{
-                  query,
-                  setQuery,
-                  status,
-                  setStatus,
-                  urgency,
-                  setUrgency,
-                  location,
-                  setLocation,
-                  sort,
-                  setSort,
-                }}
-              />
+              <details className="collapsible-panel filter-panel" open>
+                <summary><strong>Filtri</strong><span>Ricerca, stato, urgenza, area e ordine</span></summary>
+                <div className="collapsible-content">
+                  <Filters
+                    {...{
+                      query,
+                      setQuery,
+                      status,
+                      setStatus,
+                      urgency,
+                      setUrgency,
+                      location,
+                      setLocation,
+                      sort,
+                      setSort,
+                    }}
+                  />
+                </div>
+              </details>
               <details className="collapsible-panel list-panel" open>
                 <summary><strong>Elenco opportunità</strong><span>{filtered.length} risultati</span></summary>
                 <div className="opportunity-list collapsible-content">
@@ -1833,65 +1838,78 @@ function Dashboard({
     deadlines[0]?.applicationUrl || deadlines[0]?.sourceUrl,
   );
   return (
-    <section>
-      <div className="metric-grid">
-        <Metric label="LIVE" value={counts.live} tone="lime" />
-        <Metric label="WORK" value={counts.work} tone="cyan" />
-        <Metric label="ART" value={counts.art} tone="rose" />
-        <Metric label="GRAFFITI" value={counts.graffiti} tone="amber" />
-        <Metric
-          label="PHOTO"
-          value={counts.photography}
-          tone="violet"
-          planned={!counts.photography}
-        />
-        <Metric label="NEW" value={counts.fresh} />
-        <Metric label="TO VERIFY" value={counts.verify} />
-        <Metric label="CRITICAL + URGENT" value={counts.urgent} tone="danger" />
-      </div>
-      <div className="brief-grid">
-        <article className="next-action">
-          <p className="eyebrow">NEXT ACTION</p>
-          <h3>{deadlines[0]?.title || "Controlla le nuove opportunità"}</h3>
-          <p>
-            {deadlines[0]?.org ||
-              "Il radar è aggiornato e pronto per la revisione."}
-          </p>
-          {nextActionUrl && (
-            <a
-              href={nextActionUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Apri opportunità ↗
-            </a>
-          )}
-        </article>
-        <article className="deadline-box">
-          <div className="brief-title">
-            <p className="eyebrow">SCADENZE VICINE</p>
-            <span>{deadlines.length}</span>
-          </div>
-          {deadlines.map((item) => (
-            <div className="deadline-row" key={item.id}>
-              <b>{item.daysRemaining}g</b>
-              <span>
-                <strong>{item.title}</strong>
-                <small>{item.org}</small>
-              </span>
+    <section className="dashboard-folds">
+      <details className="collapsible-panel dashboard-panel" open>
+        <summary><strong>Riepilogo radar</strong><span>{counts.live} opportunità live</span></summary>
+        <div className="collapsible-content metric-grid">
+          <Metric label="LIVE" value={counts.live} tone="lime" />
+          <Metric label="WORK" value={counts.work} tone="cyan" />
+          <Metric label="ART" value={counts.art} tone="rose" />
+          <Metric label="GRAFFITI" value={counts.graffiti} tone="amber" />
+          <Metric
+            label="PHOTO"
+            value={counts.photography}
+            tone="violet"
+            planned={!counts.photography}
+          />
+          <Metric label="NEW" value={counts.fresh} />
+          <Metric label="TO VERIFY" value={counts.verify} />
+          <Metric label="CRITICAL + URGENT" value={counts.urgent} tone="danger" />
+        </div>
+      </details>
+
+      <details className="collapsible-panel dashboard-panel" open>
+        <summary><strong>Prossima azione e scadenze</strong><span>{deadlines.length} scadenze vicine</span></summary>
+        <div className="collapsible-content brief-grid">
+          <article className="next-action">
+            <p className="eyebrow">NEXT ACTION</p>
+            <h3>{deadlines[0]?.title || "Controlla le nuove opportunità"}</h3>
+            <p>
+              {deadlines[0]?.org ||
+                "Il radar è aggiornato e pronto per la revisione."}
+            </p>
+            {nextActionUrl && (
+              <a
+                href={nextActionUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Apri opportunità ↗
+              </a>
+            )}
+          </article>
+          <article className="deadline-box">
+            <div className="brief-title">
+              <p className="eyebrow">SCADENZE VICINE</p>
+              <span>{deadlines.length}</span>
             </div>
-          ))}
-        </article>
-      </div>
-      <ReminderPanel
-        reminders={reminders}
-        studioReminders={studioReminders}
-        applicationCount={applicationCount}
-        onOpenApplications={onOpenApplications}
-        studioCount={studioCount}
-        onOpenStudios={onOpenStudios}
-        reminderWindowDays={reminderWindowDays}
-      />
+            {deadlines.map((item) => (
+              <div className="deadline-row" key={item.id}>
+                <b>{item.daysRemaining}g</b>
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.org}</small>
+                </span>
+              </div>
+            ))}
+          </article>
+        </div>
+      </details>
+
+      <details className="collapsible-panel dashboard-panel" open>
+        <summary><strong>Promemoria operativi</strong><span>Finestra di {reminderWindowDays} giorni</span></summary>
+        <div className="collapsible-content">
+          <ReminderPanel
+            reminders={reminders}
+            studioReminders={studioReminders}
+            applicationCount={applicationCount}
+            onOpenApplications={onOpenApplications}
+            studioCount={studioCount}
+            onOpenStudios={onOpenStudios}
+            reminderWindowDays={reminderWindowDays}
+          />
+        </div>
+      </details>
     </section>
   );
 }

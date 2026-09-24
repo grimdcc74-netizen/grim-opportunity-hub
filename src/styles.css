@@ -2139,6 +2139,29 @@ select:focus {
 .collapsible-content {
   padding: 0 15px 16px;
 }
+.dashboard-folds {
+  display: grid;
+  gap: 8px;
+}
+.dashboard-panel .metric-grid,
+.dashboard-panel .brief-grid {
+  margin-top: 0;
+}
+.dashboard-panel .reminder-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.filter-panel {
+  margin-bottom: 8px;
+}
+.filter-panel .filters {
+  margin-bottom: 0;
+}
+.filter-panel + .list-panel {
+  margin-top: 0;
+}
 .create-panel {
   margin-bottom: 20px;
 }
