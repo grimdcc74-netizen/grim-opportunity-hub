@@ -23,8 +23,9 @@ const BASE_NAV = [
   { id: "applications", label: "Candidature", mark: "06" },
   { id: "materials", label: "Materiali", mark: "07" },
   { id: "studios", label: "Fonti monitorate", mark: "08" },
-  { id: "history", label: "Storico", mark: "09" },
-  { id: "settings", label: "Impostazioni", mark: "10" },
+  { id: "professions", label: "Professioni", mark: "09" },
+  { id: "history", label: "Storico", mark: "10" },
+  { id: "settings", label: "Impostazioni", mark: "11" },
 ];
 
 const URGENCY_ORDER = {
@@ -129,6 +130,38 @@ const EMPTY_STUDIO = {
   is_active: true,
 };
 
+const PROFESSION_CATEGORIES = [
+  ["direction_supervision", "Direzione e supervisione"],
+  ["preproduction", "Pre-produzione"],
+  ["assets_surfacing", "Produzione, asset e surfacing"],
+  ["environment", "Produzione, environment"],
+  ["fx_lighting_render", "Produzione, FX, lighting e render"],
+  ["shot_postproduction", "Post-produzione, lavoro sugli shot"],
+  ["ai_crossfunctional", "Ruoli AI, trasversali"],
+];
+
+const SENIORITY_LEVELS = [
+  [1, "Junior"],
+  [2, "Mid"],
+  [3, "Senior"],
+  [4, "Lead"],
+  [5, "Supervisor"],
+  [6, "Head of Department"],
+];
+
+const EMPTY_PROFESSION = {
+  name: "",
+  category: "assets_surfacing",
+  seniority_level: "",
+  notes: "",
+};
+
+const PROFESSION_HINTS = {
+  "Matte Painter": "Lavoro diretto sugli shot per pubblicità e film.",
+  "Matte Painter / Environment Generalist":
+    "Produzione environment nelle pipeline cinematografiche strutturate.",
+};
+
 const HISTORY_EVENT_LABELS = {
   application_created: "Candidatura aggiunta",
   application_status_changed: "Stato candidatura cambiato",
@@ -170,6 +203,7 @@ const START_VIEW_OPTIONS = [
   ["applications", "Candidature"],
   ["materials", "Materiali"],
   ["studios", "Fonti monitorate"],
+  ["professions", "Professioni"],
   ["history", "Storico"],
 ];
 
@@ -530,6 +564,8 @@ function App({ session }) {
   const [materialError, setMaterialError] = useState("");
   const [studios, setStudios] = useState([]);
   const [studioError, setStudioError] = useState("");
+  const [professions, setProfessions] = useState([]);
+  const [professionError, setProfessionError] = useState("");
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -715,6 +751,30 @@ function App({ session }) {
           return;
         }
         setStudios(data || []);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    let active = true;
+    setProfessionError("");
+    supabase
+      .from("monitored_professions")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true })
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) {
+          setProfessionError(
+            "Le professioni monitorate non sono disponibili. Riprova dopo aver aggiornato la pagina.",
+          );
+          return;
+        }
+        setProfessions(data || []);
       });
     return () => {
       active = false;
@@ -976,6 +1036,70 @@ function App({ session }) {
     setStudios((current) => current.filter((entry) => entry.id !== id));
   }
 
+  async function createProfession(values) {
+    const nextOrder = professions.reduce(
+      (maximum, entry) => Math.max(maximum, entry.sort_order || 0),
+      0,
+    ) + 1;
+    const payload = {
+      user_id: session.user.id,
+      name: values.name.trim(),
+      category: values.category,
+      seniority_level: values.seniority_level
+        ? Number(values.seniority_level)
+        : null,
+      seniority_locked: false,
+      is_direction: false,
+      is_active: true,
+      notes: values.notes.trim() || null,
+      sort_order: nextOrder,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: insertError } = await supabase
+      .from("monitored_professions")
+      .insert(payload)
+      .select()
+      .single();
+    if (insertError) throw insertError;
+    setProfessions((current) => [...current, data]);
+    return data;
+  }
+
+  async function saveProfession(id, values) {
+    const payload = {
+      name: values.name.trim(),
+      category: values.category,
+      seniority_level: values.seniority_level
+        ? Number(values.seniority_level)
+        : null,
+      is_active: Boolean(values.is_active),
+      notes: values.notes.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: saveError } = await supabase
+      .from("monitored_professions")
+      .update(payload)
+      .eq("id", id)
+      .eq("user_id", session.user.id)
+      .select()
+      .single();
+    if (saveError) throw saveError;
+    setProfessions((current) =>
+      current.map((entry) => (entry.id === id ? data : entry)),
+    );
+    return data;
+  }
+
+  async function deleteProfession(id) {
+    const { error: deleteError } = await supabase
+      .from("monitored_professions")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", session.user.id);
+    if (deleteError) throw deleteError;
+    setProfessions((current) => current.filter((entry) => entry.id !== id));
+  }
+
   async function saveSettings(values) {
     const nextPreferences = {
       start_view: values.start_view,
@@ -1024,6 +1148,7 @@ function App({ session }) {
       "applications",
       "materials",
       "monitored_studios",
+      "monitored_professions",
       "activity_history",
     ];
     const results = await Promise.all(
@@ -1214,6 +1339,8 @@ function App({ session }) {
           ? "Materiali"
         : view === "studios"
           ? "Fonti monitorate"
+        : view === "professions"
+          ? "Professioni monitorate"
         : view === "history"
           ? "Storico"
         : view === "settings"
@@ -1243,6 +1370,7 @@ function App({ session }) {
               {item.id === "applications" && <small>{applications.length}</small>}
               {item.id === "materials" && <small>{materials.length}</small>}
               {item.id === "studios" && <small>{studios.filter((entry) => entry.is_active).length}</small>}
+              {item.id === "professions" && <small>{professions.filter((entry) => entry.is_active).length}</small>}
             </button>
           ))}
         </nav>
@@ -1311,6 +1439,12 @@ function App({ session }) {
             <span>{studioError}</span>
           </div>
         )}
+        {professionError && (
+          <div className="error personal-error" role="alert">
+            <strong>Professioni non disponibili</strong>
+            <span>{professionError}</span>
+          </div>
+        )}
         {historyError && (
           <div className="error personal-error" role="alert">
             <strong>Storico non disponibile</strong>
@@ -1343,6 +1477,7 @@ function App({ session }) {
                   applications: applications.length,
                   materials: materials.length,
                   studios: studios.length,
+                  professions: professions.length,
                   history: history.length,
                 }}
                 onSave={saveSettings}
@@ -1362,6 +1497,13 @@ function App({ session }) {
                 onSave={saveStudio}
                 onMarkChecked={markStudioChecked}
                 onDelete={deleteStudio}
+              />
+            ) : view === "professions" ? (
+              <ProfessionsVault
+                professions={professions}
+                onCreate={createProfession}
+                onSave={saveProfession}
+                onDelete={deleteProfession}
               />
             ) : view === "materials" ? (
               <MaterialVault
@@ -2132,13 +2274,14 @@ function SettingsView({
           </div>
           <p>
             Scarica un file JSON con profilo, preferenze, candidature, materiali,
-            studi e storico. I file caricati nello Storage non vengono duplicati.
+            fonti, professioni e storico. I file caricati nello Storage non vengono duplicati.
           </p>
           <div className="backup-counts">
             <span><b>{counts.personalStates}</b> opportunità gestite</span>
             <span><b>{counts.applications}</b> candidature</span>
             <span><b>{counts.materials}</b> materiali</span>
             <span><b>{counts.studios}</b> fonti</span>
+            <span><b>{counts.professions}</b> professioni</span>
             <span><b>{counts.history}</b> eventi storici</span>
           </div>
           <div className="settings-actions">
@@ -2299,6 +2442,274 @@ function HistoryView({ entries, loading, opportunityMap }) {
         </div>
       )}
     </section>
+  );
+}
+
+function ProfessionsVault({ professions, onCreate, onSave, onDelete }) {
+  const [form, setForm] = useState({ ...EMPTY_PROFESSION });
+  const [filter, setFilter] = useState("active");
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setMessage("");
+    const normalizedName = form.name.trim().toLocaleLowerCase("it");
+    if (
+      professions.some(
+        (entry) => entry.name.trim().toLocaleLowerCase("it") === normalizedName,
+      )
+    ) {
+      setMessage("Questa professione è già monitorata.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onCreate(form);
+      setForm({ ...EMPTY_PROFESSION });
+      setMessage("Professione aggiunta al radar quotidiano.");
+    } catch (saveError) {
+      setMessage(
+        saveError?.code === "23505"
+          ? "Questa professione è già monitorata."
+          : "Salvataggio non riuscito.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const activeCount = professions.filter((entry) => entry.is_active).length;
+  const suspendedCount = professions.length - activeCount;
+  const needle = query.trim().toLocaleLowerCase("it");
+  const visible = professions.filter((entry) => {
+    if (filter === "active" && !entry.is_active) return false;
+    if (filter === "suspended" && entry.is_active) return false;
+    const categoryLabel =
+      PROFESSION_CATEGORIES.find(([value]) => value === entry.category)?.[1] || "";
+    return (
+      !needle ||
+      [entry.name, categoryLabel, entry.notes].some((value) =>
+        String(value || "").toLocaleLowerCase("it").includes(needle),
+      )
+    );
+  });
+
+  return (
+    <section className="professions-section">
+      <div className="section-title studio-title">
+        <div>
+          <p className="eyebrow">RADAR PROFESSIONALE</p>
+          <h2>Ruoli VFX e AI da monitorare</h2>
+          <p>
+            Le professioni attive ampliano la ricerca quotidiana senza modificare le fonti già presenti.
+          </p>
+        </div>
+        <strong>{activeCount} ATTIVE</strong>
+      </div>
+
+      <form className="studio-create profession-create" onSubmit={handleSubmit}>
+        <div className="studio-create-head">
+          <div>
+            <p className="eyebrow">PROFESSIONE AGGIUNTIVA</p>
+            <h3>Aggiungi un altro ruolo</h3>
+          </div>
+          <small>Runner e Trainee non entrano nella scala</small>
+        </div>
+        <div className="studio-form-grid">
+          <label>
+            <span>Nome della professione</span>
+            <input
+              name="name"
+              value={form.name}
+              onChange={updateField}
+              placeholder="Es. Creature TD"
+              maxLength="200"
+              required
+            />
+          </label>
+          <label>
+            <span>Categoria</span>
+            <select name="category" value={form.category} onChange={updateField}>
+              {PROFESSION_CATEGORIES.map(([value, label]) => (
+                <option value={value} key={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Livello iniziale, facoltativo</span>
+            <select
+              name="seniority_level"
+              value={form.seniority_level}
+              onChange={updateField}
+            >
+              <option value="">Da definire</option>
+              {SENIORITY_LEVELS.map(([value, label]) => (
+                <option value={value} key={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Note</span>
+            <input
+              name="notes"
+              value={form.notes}
+              onChange={updateField}
+              placeholder="Varianti del titolo o indicazioni utili"
+              maxLength="1000"
+            />
+          </label>
+        </div>
+        <div className="studio-create-actions">
+          <button type="submit" disabled={busy}>
+            {busy ? "Salvataggio…" : "Aggiungi professione"}
+          </button>
+          {message && <span role="status">{message}</span>}
+        </div>
+      </form>
+
+      <div className="studio-toolbar">
+        <div className="studio-tabs" role="tablist" aria-label="Filtra professioni monitorate">
+          <button type="button" role="tab" aria-selected={filter === "active"} className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}>Attive <b>{activeCount}</b></button>
+          <button type="button" role="tab" aria-selected={filter === "all"} className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Tutte <b>{professions.length}</b></button>
+          <button type="button" role="tab" aria-selected={filter === "suspended"} className={filter === "suspended" ? "active" : ""} onClick={() => setFilter("suspended")}>Sospese <b>{suspendedCount}</b></button>
+        </div>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Cerca professione o categoria…"
+          aria-label="Cerca professioni monitorate"
+        />
+      </div>
+
+      <div className="profession-groups">
+        {PROFESSION_CATEGORIES.map(([category, label]) => {
+          const entries = visible.filter((entry) => entry.category === category);
+          if (!entries.length) return null;
+          return (
+            <section className="profession-group" key={category}>
+              <header>
+                <h3>{label}</h3>
+                <span>{entries.length}</span>
+              </header>
+              <div className="profession-list">
+                {entries.map((profession) => (
+                  <ProfessionCard
+                    key={profession.id}
+                    profession={profession}
+                    onSave={onSave}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+        {!visible.length && (
+          <div className="studio-empty">
+            <strong>Nessuna professione in questa vista</strong>
+            <span>Modifica il filtro o aggiungi un ruolo con il modulo qui sopra.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ProfessionCard({ profession, onSave, onDelete }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function save(changes) {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(profession.id, {
+        name: profession.name,
+        category: profession.category,
+        seniority_level: profession.seniority_level || "",
+        notes: profession.notes || "",
+        is_active: profession.is_active,
+        ...changes,
+      });
+    } catch {
+      setMessage("Aggiornamento non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Eliminare definitivamente questa professione aggiunta?")) return;
+    setBusy(true);
+    try {
+      await onDelete(profession.id);
+    } catch {
+      setMessage("Eliminazione non riuscita.");
+      setBusy(false);
+    }
+  }
+
+  const currentLevel = profession.seniority_level || 0;
+  const currentLabel =
+    SENIORITY_LEVELS.find(([value]) => value === currentLevel)?.[1] || "Da definire";
+  const builtIn = profession.sort_order <= 38;
+
+  return (
+    <article className={`profession-card ${profession.is_active ? "" : "archived"}`}>
+      <div className="profession-main">
+        <div className="studio-status">
+          <i />
+          <span>{profession.is_active ? "ATTIVA" : "SOSPESA"}</span>
+        </div>
+        <div className="profession-copy">
+          <h4>{profession.name}</h4>
+          {(PROFESSION_HINTS[profession.name] || profession.notes) && (
+            <p>{PROFESSION_HINTS[profession.name] || profession.notes}</p>
+          )}
+        </div>
+        <div className="seniority-block">
+          <span>SENIORITY</span>
+          {profession.is_direction ? (
+            <strong>Direzione · fuori scala</strong>
+          ) : (
+            <>
+              <div className="seniority-dots" aria-label={`Livello ${currentLabel}`}>
+                {SENIORITY_LEVELS.map(([level, label]) => (
+                  <button
+                    type="button"
+                    key={level}
+                    className={level <= currentLevel ? "filled" : ""}
+                    aria-label={label}
+                    title={label}
+                    disabled={busy || profession.seniority_locked}
+                    onClick={() => save({ seniority_level: level })}
+                  />
+                ))}
+              </div>
+              <strong>{currentLabel}</strong>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="profession-actions">
+        {!profession.is_direction && !profession.seniority_locked && currentLevel > 0 && (
+          <button type="button" onClick={() => save({ seniority_level: "" })} disabled={busy}>Azzera livello</button>
+        )}
+        <button type="button" onClick={() => save({ is_active: !profession.is_active })} disabled={busy}>
+          {profession.is_active ? "Sospendi" : "Riattiva"}
+        </button>
+        {!builtIn && <button type="button" className="delete-studio" onClick={handleDelete} disabled={busy}>Elimina</button>}
+      </div>
+      {message && <span className="studio-message profession-message" role="status">{message}</span>}
+    </article>
   );
 }
 
