@@ -16,18 +16,29 @@ const AREAS = {
 
 const BASE_NAV = [
   { id: "today", label: "Oggi", mark: "01" },
-  { id: "work", label: "Lavoro / VFX", mark: "02" },
-  { id: "art", label: "Arte", mark: "03" },
-  { id: "graffiti", label: "Graffiti / Writing", mark: "04" },
-  { id: "photography", label: "Fotografia", mark: "05", future: true },
-  { id: "applications", label: "Candidature", mark: "06" },
-  { id: "materials", label: "Materiali", mark: "07" },
-  { id: "studios", label: "Fonti monitorate", mark: "08" },
-  { id: "professions", label: "Professioni", mark: "09" },
-  { id: "searches", label: "Ricerche", mark: "10" },
-  { id: "history", label: "Storico", mark: "11" },
-  { id: "settings", label: "Impostazioni", mark: "12" },
+  { id: "interest", label: "Interesse", mark: "02" },
+  { id: "not-interest", label: "Non interesse", mark: "03" },
+  { id: "work", label: "Lavoro / VFX", mark: "04" },
+  { id: "art", label: "Arte", mark: "05" },
+  { id: "graffiti", label: "Graffiti / Writing", mark: "06" },
+  { id: "photography", label: "Fotografia", mark: "07", future: true },
+  { id: "applications", label: "Candidature", mark: "08" },
+  { id: "materials", label: "Materiali", mark: "09" },
+  { id: "studios", label: "Fonti monitorate", mark: "10" },
+  { id: "professions", label: "Professioni", mark: "11" },
+  { id: "searches", label: "Ricerche", mark: "12" },
+  { id: "history", label: "Storico", mark: "13" },
+  { id: "settings", label: "Impostazioni", mark: "14" },
 ];
+
+const INTEREST_STATUSES = new Set([
+  "monitorata",
+  "in_preparazione",
+  "inviata",
+  "follow_up",
+  "colloquio",
+  "risposta_ricevuta",
+]);
 
 const URGENCY_ORDER = {
   CRITICAL: 0,
@@ -233,6 +244,8 @@ const REMINDER_WINDOW_OPTIONS = [
 
 const START_VIEW_OPTIONS = [
   ["today", "Oggi"],
+  ["interest", "Interesse"],
+  ["not-interest", "Non interesse"],
   ["work", "Lavoro / VFX"],
   ["art", "Arte"],
   ["graffiti", "Graffiti / Writing"],
@@ -298,6 +311,56 @@ function dateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function europeRomeDateKey(value = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function createOpportunitySnapshot(item) {
+  return {
+    id: item.id,
+    title: item.title,
+    org: item.org,
+    area: item.area,
+    category: item.category || item.tag || null,
+    summary: item.summary || item.relevance || null,
+    location: item.location || null,
+    country: item.country || null,
+    city: item.city || null,
+    remotePolicy: item.remotePolicy || null,
+    deadline: item.deadlineEuropeRome || item.deadline || null,
+    daysRemaining: item.daysRemaining ?? null,
+    firstSeen: item.firstSeen || null,
+    lastVerifiedAt: item.lastVerifiedAt || null,
+    liveStatus: item.liveStatus || null,
+    score: item.score ?? null,
+    directApplyUrl:
+      item.directApplyUrl ||
+      item.applicationUrl ||
+      item.canonicalUrl ||
+      item.sourceUrl ||
+      null,
+  };
+}
+
+function snapshotToOpportunity(snapshot) {
+  return {
+    ...snapshot,
+    deadlineEuropeRome: snapshot.deadline || null,
+    applicationUrl: snapshot.directApplyUrl || null,
+    sourceUrl: snapshot.directApplyUrl || null,
+    archivedSnapshot: true,
+    isNew: false,
+    urgencyComputed: urgencyOf(snapshot),
+  };
 }
 
 function reminderTiming(value) {
@@ -938,7 +1001,8 @@ function App({ session }) {
     };
   }, [session.user.id]);
 
-  async function savePersonalState(opportunityId, values) {
+  async function savePersonalState(opportunityId, values, opportunity = null) {
+    const existingSnapshot = personalStates[opportunityId]?.opportunity_snapshot;
     const payload = {
       user_id: session.user.id,
       opportunity_id: opportunityId,
@@ -950,6 +1014,9 @@ function App({ session }) {
       material_readiness: values.material_readiness
         ? Number(values.material_readiness)
         : null,
+      opportunity_snapshot: opportunity
+        ? createOpportunitySnapshot(opportunity)
+        : existingSnapshot || null,
       updated_at: new Date().toISOString(),
     };
     const { data, error: saveError } = await supabase
@@ -1562,14 +1629,29 @@ function App({ session }) {
       .map((item) => ({ ...item, urgencyComputed: urgencyOf(item) }));
   }, [feed, privateOpportunityItems]);
 
+  const snapshotOpportunityItems = useMemo(
+    () =>
+      Object.values(personalStates)
+        .map((entry) => entry.opportunity_snapshot)
+        .filter((snapshot) => snapshot?.id && snapshot?.title)
+        .map(snapshotToOpportunity),
+    [personalStates],
+  );
+
+  const decisionOpportunities = useMemo(() => {
+    const knownIds = new Set(opportunities.map((item) => item.id));
+    return [
+      ...opportunities,
+      ...snapshotOpportunityItems.filter((item) => !knownIds.has(item.id)),
+    ];
+  }, [opportunities, snapshotOpportunityItems]);
+
   const live = opportunities.filter((item) => item.liveStatus === "LIVE");
   const opportunityMap = useMemo(() => {
-    const allItems = [
-      ...(feed?.opportunities || []),
-      ...privateOpportunityItems,
-    ].map((item) => ({ ...item, urgencyComputed: urgencyOf(item) }));
-    return Object.fromEntries(allItems.map((item) => [item.id, item]));
-  }, [feed, privateOpportunityItems]);
+    return Object.fromEntries(
+      decisionOpportunities.map((item) => [item.id, item]),
+    );
+  }, [decisionOpportunities]);
   const applicationMap = useMemo(
     () =>
       Object.fromEntries(
@@ -1642,6 +1724,22 @@ function App({ session }) {
       ["CRITICAL", "URGENT"].includes(item.urgencyComputed),
     ).length,
   };
+  const todayNews = useMemo(() => {
+    const today = europeRomeDateKey();
+    return live
+      .filter((item) => item.firstSeen && europeRomeDateKey(item.firstSeen) === today)
+      .sort((a, b) => {
+        const aDecided = Boolean(personalStates[a.id]);
+        const bDecided = Boolean(personalStates[b.id]);
+        return Number(aDecided) - Number(bDecided) || (b.score || 0) - (a.score || 0);
+      });
+  }, [live, personalStates]);
+  const interestCount = Object.values(personalStates).filter((entry) =>
+    INTEREST_STATUSES.has(entry.personal_status),
+  ).length;
+  const notInterestCount = Object.values(personalStates).filter(
+    (entry) => entry.personal_status === "scartata",
+  ).length;
   const photoReady = counts.photography > 0;
   const nav = BASE_NAV.map((item) =>
     item.id === "photography" ? { ...item, disabled: !photoReady } : item,
@@ -1649,10 +1747,18 @@ function App({ session }) {
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const area = view === "today" ? null : view;
-    return opportunities
+    const decisionView = view === "interest" || view === "not-interest";
+    const area = ["today", "interest", "not-interest"].includes(view) ? null : view;
+    const sourceItems = decisionView ? decisionOpportunities : opportunities;
+    return sourceItems
       .filter((item) => !area || item.area === area)
-      .filter((item) => status === "ALL" || item.liveStatus === status)
+      .filter((item) => {
+        const personalStatus = personalStates[item.id]?.personal_status;
+        if (view === "interest") return INTEREST_STATUSES.has(personalStatus);
+        if (view === "not-interest") return personalStatus === "scartata";
+        return personalStatus !== "scartata";
+      })
+      .filter((item) => decisionView || status === "ALL" || item.liveStatus === status)
       .filter((item) => urgency === "ALL" || item.urgencyComputed === urgency)
       .filter((item) => {
         if (location === "ALL") return true;
@@ -1693,7 +1799,7 @@ function App({ session }) {
           (b.score || 0) - (a.score || 0)
         );
       });
-  }, [opportunities, view, query, status, urgency, location, sort]);
+  }, [decisionOpportunities, opportunities, personalStates, view, query, status, urgency, location, sort]);
 
   const heading =
     view === "today"
@@ -1742,6 +1848,8 @@ function App({ session }) {
               <b>{item.label}</b>
               {item.disabled && <small>PREVISTA</small>}
               {item.id === "applications" && <small>{applications.length}</small>}
+              {item.id === "interest" && <small>{interestCount}</small>}
+              {item.id === "not-interest" && <small>{notInterestCount}</small>}
               {item.id === "materials" && <small>{materials.length}</small>}
               {item.id === "studios" && <small>{studios.filter((entry) => entry.is_active).length}</small>}
               {item.id === "professions" && <small>{professions.filter((entry) => entry.is_active).length}</small>}
@@ -1940,6 +2048,9 @@ function App({ session }) {
                   <Dashboard
                     counts={counts}
                     opportunities={live}
+                    news={todayNews}
+                    personalStates={personalStates}
+                    onSavePersonalState={savePersonalState}
                     reminders={reminders}
                     studioReminders={studioReminders}
                     applicationCount={applications.length}
@@ -2012,6 +2123,9 @@ function App({ session }) {
 function Dashboard({
   counts,
   opportunities,
+  news,
+  personalStates,
+  onSavePersonalState,
   reminders,
   studioReminders,
   applicationCount,
@@ -2045,6 +2159,28 @@ function Dashboard({
           <Metric label="NEW" value={counts.fresh} />
           <Metric label="TO VERIFY" value={counts.verify} />
           <Metric label="CRITICAL + URGENT" value={counts.urgent} tone="danger" />
+        </div>
+      </details>
+
+      <details className="collapsible-panel dashboard-panel daily-news-panel" open>
+        <summary>
+          <strong>News di oggi</strong>
+          <span>{news.length} nuovi annunci</span>
+        </summary>
+        <div className="collapsible-content daily-news-list">
+          {news.map((item) => (
+            <DailyNewsRow
+              key={item.id}
+              item={item}
+              personalState={personalStates[item.id]}
+              onSave={onSavePersonalState}
+            />
+          ))}
+          {!news.length && (
+            <div className="daily-news-empty">
+              Nessun nuovo annuncio rilevato oggi.
+            </div>
+          )}
         </div>
       </details>
 
@@ -2101,6 +2237,77 @@ function Dashboard({
         </div>
       </details>
     </section>
+  );
+}
+
+function DailyNewsRow({ item, personalState, onSave }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const destination = safeExternalUrl(
+    item.directApplyUrl || item.applicationUrl || item.canonicalUrl || item.sourceUrl,
+  );
+
+  async function classify(personalStatus) {
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(
+        item.id,
+        {
+          personal_status: personalStatus,
+          priority: personalState?.priority ?? "",
+          notes: personalState?.notes || "",
+          next_action: personalState?.next_action || "",
+          follow_up_date: personalState?.follow_up_date || "",
+          material_readiness: personalState?.material_readiness ?? "",
+        },
+        item,
+      );
+    } catch {
+      setMessage("Scelta non salvata. Riprova.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="daily-news-row">
+      <div className="daily-news-copy">
+        <span className={`area ${(AREAS[item.area] || {}).tone || "neutral"}`}>
+          {(AREAS[item.area] || {}).short || "ALTRO"}
+        </span>
+        <div>
+          <h3>{item.title}</h3>
+          <p>{item.org}</p>
+          <small>{item.summary || item.relevance || "Descrizione non disponibile."}</small>
+        </div>
+      </div>
+      <div className="daily-news-actions">
+        <button
+          type="button"
+          className={INTEREST_STATUSES.has(personalState?.personal_status) ? "selected" : ""}
+          onClick={() => classify("monitorata")}
+          disabled={busy}
+        >
+          Mi interessa
+        </button>
+        <button
+          type="button"
+          className={personalState?.personal_status === "scartata" ? "selected rejected" : ""}
+          onClick={() => classify("scartata")}
+          disabled={busy}
+        >
+          Non mi interessa
+        </button>
+        {personalState && (
+          <button type="button" onClick={() => classify("da_valutare")} disabled={busy}>
+            Da valutare
+          </button>
+        )}
+        {destination && <a href={destination} target="_blank" rel="noreferrer">Apri ↗</a>}
+      </div>
+      {message && <span className="daily-news-message">{message}</span>}
+    </article>
   );
 }
 
@@ -2312,10 +2519,31 @@ function OpportunityCard({
     setBusy(true);
     setMessage("");
     try {
-      await onSave(item.id, form);
+      await onSave(item.id, form, item);
       setMessage("Salvato");
     } catch {
       setMessage("Salvataggio non riuscito. Riprova.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClassify(personalStatus) {
+    const next = { ...form, personal_status: personalStatus };
+    setForm(next);
+    setBusy(true);
+    setMessage("");
+    try {
+      await onSave(item.id, next, item);
+      setMessage(
+        personalStatus === "monitorata"
+          ? "Aggiunta a Interesse"
+          : personalStatus === "scartata"
+            ? "Aggiunta a Non interesse"
+            : "Riportata a Da valutare",
+      );
+    } catch {
+      setMessage("Scelta non salvata. Riprova.");
     } finally {
       setBusy(false);
     }
@@ -2409,6 +2637,29 @@ function OpportunityCard({
             <strong className="application-badge">
               Candidatura: {applicationStatusLabel(application.status)}
             </strong>
+          )}
+        </div>
+        <div className="opportunity-decisions">
+          <button
+            type="button"
+            className={INTEREST_STATUSES.has(personalState?.personal_status) ? "selected" : ""}
+            onClick={() => handleClassify("monitorata")}
+            disabled={busy}
+          >
+            Mi interessa
+          </button>
+          <button
+            type="button"
+            className={personalState?.personal_status === "scartata" ? "selected rejected" : ""}
+            onClick={() => handleClassify("scartata")}
+            disabled={busy}
+          >
+            Non mi interessa
+          </button>
+          {personalState && (
+            <button type="button" onClick={() => handleClassify("da_valutare")} disabled={busy}>
+              Da valutare
+            </button>
           )}
         </div>
       </div>
