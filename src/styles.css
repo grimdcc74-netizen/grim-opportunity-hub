@@ -3158,3 +3158,123 @@ select:focus {
   }
   .reminder-links { justify-content: flex-start; }
 }
+
+.daily-news-panel {
+  border-color: #4c5d22;
+}
+.daily-news-panel > summary {
+  background: rgba(199, 255, 32, 0.035);
+}
+.daily-news-list {
+  display: grid;
+}
+.daily-news-row {
+  min-width: 0;
+  padding: 15px 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px 20px;
+  align-items: center;
+}
+.daily-news-row:first-child {
+  border-top: 0;
+}
+.daily-news-copy {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.daily-news-copy h3 {
+  margin: 0 0 3px;
+  font-size: 0.86rem;
+}
+.daily-news-copy p,
+.daily-news-copy small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.daily-news-copy small {
+  margin-top: 7px;
+  display: block;
+  line-height: 1.45;
+}
+.daily-news-actions,
+.opportunity-decisions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.daily-news-actions button,
+.daily-news-actions a,
+.opportunity-decisions button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #39434c;
+  color: #c8d0d6;
+  background: transparent;
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+.daily-news-actions a {
+  display: inline-flex;
+  align-items: center;
+}
+.daily-news-actions button:hover,
+.daily-news-actions button.selected,
+.opportunity-decisions button:hover,
+.opportunity-decisions button.selected {
+  border-color: var(--lime);
+  color: #080b0d;
+  background: var(--lime);
+}
+.daily-news-actions button.selected.rejected,
+.opportunity-decisions button.selected.rejected {
+  border-color: #626d76;
+  color: #fff;
+  background: #394149;
+}
+.daily-news-actions button:disabled,
+.opportunity-decisions button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.daily-news-empty {
+  padding: 24px 16px;
+  color: #78838c;
+  font-size: 0.75rem;
+}
+.daily-news-message {
+  grid-column: 1 / -1;
+  color: #ffaba5;
+  font-size: 0.66rem;
+}
+.opportunity-decisions {
+  margin-top: 10px;
+}
+
+@media (max-width: 780px) {
+  .daily-news-row {
+    grid-template-columns: 1fr;
+  }
+  .daily-news-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 520px) {
+  .daily-news-copy {
+    grid-template-columns: 1fr;
+  }
+  .daily-news-actions button,
+  .daily-news-actions a,
+  .opportunity-decisions button {
+    min-height: 42px;
+  }
+}
