@@ -1714,6 +1714,13 @@ function App({ session }) {
           ? "Impostazioni"
         : BASE_NAV.find((item) => item.id === view)?.label;
 
+  const latestDataUpdatedAt = useMemo(() => {
+    const timestamps = [feed?.generatedAt, monitoringRuns[0]?.started_at]
+      .filter(Boolean)
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    return timestamps[0] || APP_BUILD_TIME;
+  }, [feed?.generatedAt, monitoringRuns]);
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -1780,11 +1787,9 @@ function App({ session }) {
             <h1>{heading}</h1>
           </div>
           <div className="updated">
-            <span>APP AGGIORNATA</span>
-            <strong>{formatDate(APP_BUILD_TIME)}</strong>
-            <small>
-              Dati verificati {feed?.generatedAt ? formatDate(feed.generatedAt) : "…"}
-            </small>
+            <span>DATI AGGIORNATI</span>
+            <strong>{formatDate(latestDataUpdatedAt)}</strong>
+            <small>App aggiornata {formatDate(APP_BUILD_TIME)}</small>
           </div>
         </header>
 
